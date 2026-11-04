@@ -157,6 +157,9 @@ func SlotUIField(s *model.Slot) UIField {
 	if s.Type == "float" {
 		f.Step = "any"
 	}
+	if s.Type == "duration" && f.Placeholder == "" {
+		f.Placeholder = "h:mm:ss"
+	}
 	if s.Type == "enum" && s.EnumObj != nil {
 		for _, v := range s.EnumObj.Values {
 			f.Options = append(f.Options, UIOption{Value: v, Label: EnumLabel(v)})

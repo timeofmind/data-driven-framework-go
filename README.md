@@ -119,6 +119,7 @@ Every `belongs_to` gets an inverse `has_many` on the target automatically.
 | Where | Attribute | Meaning |
 |---|---|---|
 | slot | `type: password` | Stored as a bcrypt hash; accepted on input, never emitted in records, APIs or forms |
+| slot | `type: duration` | Whole seconds in the database and API; entered and shown as `h:mm:ss` (also accepts `mm:ss`, `1h20m`) |
 | class | `display: slot` | Slot used as the record's title in links and selectors |
 | class | `order_by: "slot desc"` | Default list ordering |
 | class | `calendar: date_slot` | Front ends may render a calendar view on this date |

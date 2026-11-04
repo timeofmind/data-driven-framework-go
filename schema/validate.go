@@ -40,7 +40,7 @@ func ValidateOrError(m *model.Model) error {
 	return nil
 }
 
-var numericOrString = map[string]bool{"integer": true, "float": true, "string": true, "text": true, "password": true}
+var numericOrString = map[string]bool{"integer": true, "float": true, "duration": true, "string": true, "text": true, "password": true}
 
 func validateClass(c *model.Class, m *model.Model) []string {
 	var errs []string

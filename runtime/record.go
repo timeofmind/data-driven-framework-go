@@ -194,7 +194,7 @@ func checkSlot(s *model.Slot, v any) string {
 		if s.EnumObj != nil && !s.EnumObj.HasValue(fmt.Sprint(v)) {
 			return "must be one of " + strings.Join(s.EnumObj.Values, ", ")
 		}
-	case "integer", "float":
+	case "integer", "float", "duration":
 		var f float64
 		switch n := v.(type) {
 		case int64:
@@ -328,6 +328,26 @@ func Coerce(s *model.Slot, raw any) (any, error) {
 			}
 			return nil, fmt.Errorf("must be true or false")
 		}
+	case "duration":
+		switch v := raw.(type) {
+		case int64:
+			return v, nil
+		case int:
+			return int64(v), nil
+		case float64:
+			return int64(math.Round(v)), nil
+		case json.Number:
+			if f, err := v.Float64(); err == nil {
+				return int64(math.Round(f)), nil
+			}
+		case time.Duration:
+			return int64(v.Round(time.Second) / time.Second), nil
+		case string:
+			if n, ok := ParseDuration(v); ok {
+				return n, nil
+			}
+			return nil, fmt.Errorf("must be a duration like 1:05:30, 45:00 or 1h20m")
+		}
 	case "date":
 		switch v := raw.(type) {
 		case time.Time:
@@ -361,6 +381,108 @@ func Coerce(s *model.Slot, raw any) (any, error) {
 		}
 	}
 	return nil, fmt.Errorf("unsupported value %T", raw)
+}
+
+// ParseDuration reads h:mm:ss, mm:ss, Go-style 1h20m30s, or bare seconds,
+// returning whole seconds.
+func ParseDuration(s string) (int64, bool) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0, false
+	}
+	if n, err := strconv.ParseFloat(s, 64); err == nil && n >= 0 {
+		return int64(math.Round(n)), true
+	}
+	if strings.Contains(s, ":") {
+		parts := strings.Split(s, ":")
+		if len(parts) > 3 {
+			return 0, false
+		}
+		var total float64
+		for i, p := range parts {
+			f, err := strconv.ParseFloat(p, 64)
+			if err != nil || f < 0 || (i > 0 && f >= 60) {
+				return 0, false
+			}
+			total = total*60 + f
+		}
+		return int64(math.Round(total)), true
+	}
+	if d, err := time.ParseDuration(strings.ReplaceAll(s, " ", "")); err == nil && d >= 0 {
+		return int64(d.Round(time.Second) / time.Second), true
+	}
+	return 0, false
+}
+
+// FormatDuration renders seconds as h:mm:ss (or m:ss under an hour).
+func FormatDuration(sec int64) string {
+	neg := ""
+	if sec < 0 {
+		neg, sec = "-", -sec
+	}
+	h, m, s := sec/3600, (sec%3600)/60, sec%60
+	if h > 0 {
+		return fmt.Sprintf("%s%d:%02d:%02d", neg, h, m, s)
+	}
+	return fmt.Sprintf("%s%d:%02d", neg, m, s)
+}
+
+// InputValue renders a value for an HTML form input of the slot.
+func InputValue(s *model.Slot, v any) string {
+	if v == nil {
+		return ""
+	}
+	switch s.Type {
+	case "duration":
+		if n, ok := v.(int64); ok {
+			return FormatDuration(n)
+		}
+	case "datetime":
+		if str, ok := v.(string); ok && len(str) >= 16 {
+			return strings.Replace(str[:16], " ", "T", 1)
+		}
+	case "password":
+		return ""
+	}
+	return FormatValue(v)
+}
+
+// DisplayValue renders a value for humans: durations as h:mm:ss, booleans as
+// Yes/No, enum values as labels, floats to at most two decimals.
+func DisplayValue(s *model.Slot, v any) string {
+	if v == nil {
+		return ""
+	}
+	switch s.Type {
+	case "duration":
+		if n, ok := v.(int64); ok {
+			return FormatDuration(n)
+		}
+	case "boolean":
+		if b, ok := v.(bool); ok {
+			if b {
+				return "Yes"
+			}
+			return "No"
+		}
+	case "enum":
+		str := FormatValue(v)
+		str = strings.ReplaceAll(str, "_", " ")
+		if str != "" {
+			return strings.ToUpper(str[:1]) + str[1:]
+		}
+	case "float":
+		if f, ok := v.(float64); ok {
+			return strconv.FormatFloat(math.Round(f*100)/100, 'f', -1, 64)
+		}
+	case "datetime":
+		if str, ok := v.(string); ok && len(str) >= 16 {
+			return str[:16]
+		}
+	case "password":
+		return "••••••"
+	}
+	return FormatValue(v)
 }
 
 // FormatValue renders a normalised value for display or form input.

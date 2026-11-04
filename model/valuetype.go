@@ -5,10 +5,11 @@ import (
 	"strings"
 )
 
-// PrimitiveTypes are the slot types a schema may use. "password" is a Go-port
-// extension: stored as a one-way hash, accepted on input, never emitted.
+// PrimitiveTypes are the slot types a schema may use. Go-port extensions:
+// "password" is stored as a one-way hash, accepted on input, never emitted;
+// "duration" is stored as whole seconds and entered/shown as h:mm:ss.
 var PrimitiveTypes = []string{
-	"string", "integer", "float", "boolean", "date", "datetime", "text", "enum", "password",
+	"string", "integer", "float", "boolean", "date", "datetime", "text", "enum", "password", "duration",
 }
 
 var mysqlTypeMap = map[string]string{
@@ -21,6 +22,7 @@ var mysqlTypeMap = map[string]string{
 	"text":     "TEXT",
 	"enum":     "ENUM",
 	"password": "VARCHAR(255)",
+	"duration": "INT",
 }
 
 var sqliteTypeMap = map[string]string{
@@ -33,6 +35,7 @@ var sqliteTypeMap = map[string]string{
 	"text":     "TEXT",
 	"enum":     "TEXT",
 	"password": "TEXT",
+	"duration": "INTEGER",
 }
 
 var jsonSchemaTypeMap = map[string]map[string]any{
@@ -45,6 +48,7 @@ var jsonSchemaTypeMap = map[string]map[string]any{
 	"text":     {"type": "string"},
 	"enum":     {"type": "string"},
 	"password": {"type": "string", "format": "password", "writeOnly": true},
+	"duration": {"type": "integer", "description": "duration in seconds"},
 }
 
 var goTypeMap = map[string]string{
@@ -57,6 +61,7 @@ var goTypeMap = map[string]string{
 	"text":     "string",
 	"enum":     "string",
 	"password": "string",
+	"duration": "int64",
 }
 
 var htmlInputMap = map[string]string{
@@ -69,6 +74,7 @@ var htmlInputMap = map[string]string{
 	"text":     "textarea",
 	"enum":     "select",
 	"password": "password",
+	"duration": "duration",
 }
 
 // IsValidType reports whether t is a known primitive type.

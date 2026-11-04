@@ -419,3 +419,22 @@ func TestSandboxFixturesAndReverse(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestDuration(t *testing.T) {
+	s := &model.Slot{Name: "d", Type: "duration"}
+	for in, want := range map[string]int64{"1:05:30": 3930, "45:00": 2700, "1h20m": 4800, "90": 90, "0:59.6": 60} {
+		got, err := runtime.Coerce(s, in)
+		if err != nil || got != want {
+			t.Errorf("%q -> %v (%v), want %d", in, got, err, want)
+		}
+	}
+	if _, err := runtime.Coerce(s, "1:75"); err == nil {
+		t.Error("1:75 should be rejected")
+	}
+	if runtime.FormatDuration(3930) != "1:05:30" || runtime.FormatDuration(59) != "0:59" {
+		t.Error("FormatDuration")
+	}
+	if runtime.DisplayValue(&model.Slot{Type: "enum"}, "long_run") != "Long run" {
+		t.Error("enum display")
+	}
+}

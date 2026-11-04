@@ -44,7 +44,7 @@ func escapeString(s string) string { return strings.ReplaceAll(s, "'", "''") }
 
 func literalDefault(s *model.Slot) string {
 	d := *s.Default
-	if s.Type == "integer" || s.Type == "float" || s.Type == "boolean" {
+	if s.Type == "integer" || s.Type == "float" || s.Type == "boolean" || s.Type == "duration" {
 		return d
 	}
 	return "'" + escapeString(d) + "'"
