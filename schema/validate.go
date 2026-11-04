@@ -27,6 +27,7 @@ func Validate(m *model.Model) []string {
 	}
 	for _, c := range m.Classes() {
 		errs = append(errs, validateClass(c, m)...)
+		errs = append(errs, validateBehaviour(c, m)...)
 	}
 	errs = append(errs, inheritanceCycles(m)...)
 	return errs

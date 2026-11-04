@@ -128,6 +128,25 @@ Every `belongs_to` gets an inverse `has_many` on the target automatically.
 | belongs_to | `on_delete: cascade \| set_null \| restrict` | Foreign-key delete behaviour |
 | has_many | `order_by: "slot asc"` | Ordering when navigating the relationship |
 
+### Declarative behaviour (v0.2)
+
+Apps describe behaviour in the schema too, with a small, side-effect-free expression
+language (`expr` package: arithmetic, comparisons, `and`/`or`/`not`, string `+`,
+`coalesce()`, `if()`, `round()`, `duration()`, `lower()`, `min()`/`max()`; nulls
+propagate; every expression is checked against the schema when it loads).
+
+| Where | Attribute | Meaning |
+|---|---|---|
+| class | `computed: [{name, label, expr, format, decimals, suffix, when}]` | Read-only derived values shown with a record (`format`: duration, number, text) |
+| class | `calendar_label: expr` | Text for calendar entries |
+| class | `triggers: [{via, if, set}]` | On every save, update the row a belongs_to points at (`self.*`, `target.*`) |
+| class | `import: {formats, dedupe, timezone, fields, fallback, children, link, create}` | Create records from uploaded files: map the reader's fields to slots, add children, link to matching rows, create rows in other classes |
+| has_many | `rank: true` or `rank: {best_per: slot}` | Leaderboard: numbered in `order_by`, optionally best row per slot |
+| has_many | `add_label`, `add_when: expr` | Label and condition (on the parent row) for adding a child |
+
+`Handle.Import` executes an import block for a parsed `ImportSource`; the file-format
+readers live in the application server (e.g. the Caddy module), not here.
+
 `access.read` is `public` (default), `authenticated` or `owner`; `access.write` is
 `owner` (default when an owner slot is set), `authenticated` or `nobody`.
 `public_when: {visibility: public}` makes matching rows readable by anyone even when

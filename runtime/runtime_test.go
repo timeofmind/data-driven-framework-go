@@ -511,3 +511,5 @@ func TestParentAccess(t *testing.T) {
 		})
 	}
 }
+
+func loadErr(doc string) (*model.Model, error) { return schema.Load(schema.String(doc)) }

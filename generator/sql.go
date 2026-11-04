@@ -89,4 +89,4 @@ func SplitStatements(sqlText string) []string {
 }
 
 // Version is the framework version reported in generated artifacts.
-const Version = "0.1.0"
+const Version = "0.2.0"

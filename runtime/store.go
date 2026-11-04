@@ -373,7 +373,7 @@ func (h *Handle) Save(ctx context.Context, rec *Record) error {
 		return err
 	}
 	rec.Values, rec.persisted = fresh.Values, true
-	return nil
+	return h.reg.runTriggers(ctx, rec)
 }
 
 func (h *Handle) insert(ctx context.Context, tx execer, rec *Record, pk *model.Slot) error {

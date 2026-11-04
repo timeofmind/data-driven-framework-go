@@ -104,6 +104,49 @@ func Docs(m *model.Model) string {
 			}
 			b.WriteString("\n")
 		}
+		if len(c.Computed) > 0 {
+			b.WriteString("**Computed**\n\n")
+			for _, cp := range c.Computed {
+				line := fmt.Sprintf("- %s = `%s`", firstNonEmpty(cp.Label, cp.Name), cp.Expr)
+				if cp.When != nil {
+					line += fmt.Sprintf(" when `%s`", cp.When)
+				}
+				b.WriteString(line + "\n")
+			}
+			b.WriteString("\n")
+		}
+		if len(c.Triggers) > 0 {
+			b.WriteString("**On save**\n\n")
+			for _, tr := range c.Triggers {
+				var sets []string
+				for _, a := range tr.Set {
+					sets = append(sets, fmt.Sprintf("`%s = %s`", a.Slot, a.Expr))
+				}
+				line := fmt.Sprintf("- via `%s`: set %s", tr.Via, strings.Join(sets, ", "))
+				if tr.If != nil {
+					line += fmt.Sprintf(" if `%s`", tr.If)
+				}
+				b.WriteString(line + "\n")
+			}
+			b.WriteString("\n")
+		}
+		if im := c.Import; im != nil {
+			fmt.Fprintf(&b, "**Import** from %s", strings.Join(im.Formats, ", "))
+			if im.Dedupe != "" {
+				fmt.Fprintf(&b, " (deduplicated on `%s`)", im.Dedupe)
+			}
+			b.WriteString("\n\n")
+			for _, a := range im.Fields {
+				fmt.Fprintf(&b, "- `%s` ← `%s`\n", a.Slot, a.Expr)
+			}
+			for _, ln := range im.Links {
+				fmt.Fprintf(&b, "- links `%s` to a matching row\n", ln.Via)
+			}
+			for _, cr := range im.Creates {
+				fmt.Fprintf(&b, "- creates %s for each matching %s\n", cr.Class, cr.FromClass)
+			}
+			b.WriteString("\n")
+		}
 		if len(c.Constraints) > 0 {
 			b.WriteString("**Constraints**\n\n")
 			for _, k := range c.Constraints {

@@ -10,6 +10,8 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/timeofmind/data-driven-framework-go/expr"
+
 	"github.com/timeofmind/data-driven-framework-go/model"
 )
 
@@ -197,6 +199,9 @@ func buildClass(name string, def map[string]any) (*model.Class, error) {
 	if a := asMap(def["auth"]); len(a) > 0 {
 		c.Auth = &model.Auth{Login: str(a["login"]), Password: str(a["password"]), Display: str(a["display"])}
 	}
+	if err := buildBehaviour(c, def); err != nil {
+		return nil, fmt.Errorf("class %q: %w", name, err)
+	}
 	return c, nil
 }
 
@@ -218,7 +223,23 @@ func buildRelationship(owner, kind string, d map[string]any) (*model.Relationshi
 			rname += "s"
 		}
 	}
+	var rank *model.Rank
+	switch rv := d["rank"].(type) {
+	case bool:
+		if rv {
+			rank = &model.Rank{}
+		}
+	case map[string]any:
+		rank = &model.Rank{BestPer: str(rv["best_per"])}
+	}
+	addWhen, err := optExpr(d, "add_when")
+	if err != nil {
+		return nil, fmt.Errorf("class %q: relationship to %q: %w", owner, target, err)
+	}
 	return model.NewRelationship(model.Relationship{
+		Rank:        rank,
+		AddLabel:    str(d["add_label"]),
+		AddWhen:     addWhen,
 		Kind:        kind,
 		Name:        rname,
 		Target:      target,
@@ -347,4 +368,137 @@ func sortedKeys[V any](m map[string]V) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+func optExpr(d map[string]any, key string) (*expr.Expr, error) {
+	v, ok := d[key]
+	if !ok || v == nil {
+		return nil, nil
+	}
+	return parseExpr(key, v)
+}
+
+func parseExpr(what string, v any) (*expr.Expr, error) {
+	src := str(v)
+	if src == "" {
+		return nil, fmt.Errorf("%s: empty expression", what)
+	}
+	e, err := expr.Parse(src)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", what, err)
+	}
+	return e, nil
+}
+
+// assigns parses a {slot: expression} mapping in sorted key order.
+func assigns(what string, v any) ([]model.Assign, error) {
+	m := asMap(v)
+	var out []model.Assign
+	for _, k := range sortedKeys(m) {
+		e, err := parseExpr(what+"."+k, m[k])
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, model.Assign{Slot: k, Expr: e})
+	}
+	return out, nil
+}
+
+func buildBehaviour(c *model.Class, def map[string]any) error {
+	var err error
+	if c.CalendarLabel, err = optExpr(def, "calendar_label"); err != nil {
+		return err
+	}
+	if list, ok := def["computed"].([]any); ok {
+		for _, item := range list {
+			d := asMap(item)
+			cp := &model.Computed{Name: str(d["name"]), Label: str(d["label"]), Format: str(d["format"]), Suffix: str(d["suffix"])}
+			if cp.Name == "" {
+				return fmt.Errorf("computed entry missing name")
+			}
+			if n, err := strconv.Atoi(str(d["decimals"])); err == nil {
+				cp.Decimals = n
+			}
+			if cp.Expr, err = parseExpr("computed "+cp.Name, d["expr"]); err != nil {
+				return err
+			}
+			if cp.When, err = optExpr(d, "when"); err != nil {
+				return fmt.Errorf("computed %s: %w", cp.Name, err)
+			}
+			c.Computed = append(c.Computed, cp)
+		}
+	}
+	if list, ok := def["triggers"].([]any); ok {
+		for _, item := range list {
+			d := asMap(item)
+			tr := &model.Trigger{Via: str(d["via"])}
+			if tr.If, err = optExpr(d, "if"); err != nil {
+				return fmt.Errorf("trigger via %s: %w", tr.Via, err)
+			}
+			if tr.Set, err = assigns("trigger set", d["set"]); err != nil {
+				return err
+			}
+			c.Triggers = append(c.Triggers, tr)
+		}
+	}
+	if d := asMap(def["import"]); len(d) > 0 {
+		im := &model.Import{Formats: strList(d["formats"]), Dedupe: str(d["dedupe"])}
+		if im.Timezone, err = optExpr(d, "timezone"); err != nil {
+			return err
+		}
+		if im.Fields, err = assigns("import fields", d["fields"]); err != nil {
+			return err
+		}
+		if fb := asMap(d["fallback"]); len(fb) > 0 {
+			im.Fallback = map[string]string{}
+			for k, v := range fb {
+				im.Fallback[k] = str(v)
+			}
+		}
+		for _, item := range asList(d["children"]) {
+			cd := asMap(item)
+			ch := model.ImportChild{Relationship: str(cd["relationship"]), From: str(cd["from"])}
+			ch.Min, _ = strconv.Atoi(str(cd["min"]))
+			if ch.Fields, err = assigns("import children fields", cd["fields"]); err != nil {
+				return err
+			}
+			im.Children = append(im.Children, ch)
+		}
+		for _, item := range asList(d["link"]) {
+			ld := asMap(item)
+			ln := model.ImportLink{Via: str(ld["via"])}
+			if ln.Where, err = assigns("import link where", ld["where"]); err != nil {
+				return err
+			}
+			if ln.If, err = optExpr(ld, "if"); err != nil {
+				return err
+			}
+			if ln.Prefer, err = optExpr(ld, "prefer"); err != nil {
+				return err
+			}
+			im.Links = append(im.Links, ln)
+		}
+		for _, item := range asList(d["create"]) {
+			cd := asMap(item)
+			from := asMap(cd["from"])
+			cr := model.ImportCreate{Class: str(cd["class"]), FromClass: str(from["class"]), FromFollow: str(from["follow"]), Unique: strList(cd["unique"])}
+			if cr.FromWhere, err = assigns("import create from.where", from["where"]); err != nil {
+				return err
+			}
+			if cr.If, err = optExpr(cd, "if"); err != nil {
+				return err
+			}
+			if cr.Set, err = assigns("import create set", cd["set"]); err != nil {
+				return err
+			}
+			im.Creates = append(im.Creates, cr)
+		}
+		c.Import = im
+	}
+	return nil
+}
+
+func asList(v any) []any {
+	l, _ := v.([]any)
+	return l
 }

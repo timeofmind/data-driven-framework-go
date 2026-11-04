@@ -5,8 +5,10 @@ package model
 
 import (
 	"crypto/md5"
+
 	"encoding/hex"
 	"fmt"
+	"github.com/timeofmind/data-driven-framework-go/expr"
 	"regexp"
 	"sort"
 	"strings"
@@ -281,6 +283,11 @@ type Relationship struct {
 	OrderBy     string // has_many: "slot [asc|desc]" for listing children
 	OnDelete    string // belongs_to: cascade | set_null | restrict (Go-port extension)
 	Owner       string
+
+	// has_many presentation (Go-port extensions)
+	Rank     *Rank      // leaderboard numbering, optionally best row per slot
+	AddLabel string     // label for the "add" action, e.g. "Register"
+	AddWhen  *expr.Expr // the add action is offered only when this holds for the parent row
 }
 
 func NewRelationship(r Relationship) (*Relationship, error) {
@@ -389,6 +396,11 @@ type Class struct {
 	Calendar string // date slot; front ends may render a calendar view
 	Access   *Access
 	Auth     *Auth
+
+	Computed      []*Computed
+	CalendarLabel *expr.Expr // text for calendar entries; falls back to the display slot
+	Triggers      []*Trigger
+	Import        *Import
 
 	ParentClass   *Class  // set by the resolver
 	ResolvedSlots []*Slot // own + inherited, set by the resolver
