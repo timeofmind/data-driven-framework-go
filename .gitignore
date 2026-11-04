@@ -1,0 +1,6 @@
+/ddframework
+*.db
+*.db-shm
+*.db-wal
+/generated/
+.env*

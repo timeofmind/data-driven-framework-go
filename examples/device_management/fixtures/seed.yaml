@@ -1,0 +1,21 @@
+DeviceClass:
+  - name: Router
+    default_os: "Cisco IOS"
+    default_vendor: "Cisco"
+    description: "Layer 3 routing devices"
+  - name: Switch
+    default_os: "Cisco IOS"
+    default_vendor: "Cisco"
+    description: "Layer 2/3 switching devices"
+  - name: Server
+    default_os: "Linux"
+    default_vendor: "Various"
+    description: "Compute servers"
+
+Tag:
+  - name: core
+    color: "#FF0000"
+  - name: edge
+    color: "#00AA00"
+  - name: dmz
+    color: "#0000FF"
