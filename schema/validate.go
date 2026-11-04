@@ -131,6 +131,9 @@ func validateClass(c *model.Class, m *model.Model) []string {
 		if (a.Read == "owner" || a.Write == "owner") && a.Owner == "" {
 			add("Class '%s', access: read/write 'owner' requires an owner slot", cn)
 		}
+		if a.Parent != "" && c.BelongsToVia(a.Parent) == nil {
+			add("Class '%s', access: parent '%s' must be the FK slot of a belongs_to relationship", cn, a.Parent)
+		}
 		for slot := range a.PublicWhen {
 			if !c.HasSlot(slot) {
 				add("Class '%s', access: public_when slot '%s' is not defined", cn, slot)

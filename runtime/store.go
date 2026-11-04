@@ -28,6 +28,12 @@ type Cond struct {
 
 func Eq(field string, v any) Cond { return Cond{Field: field, Op: "=", Value: v} }
 
+// subquery is a framework-built SELECT used with the internal "insub" operator.
+type subquery struct {
+	sql  string
+	args []any
+}
+
 // Query selects records. Where conditions are ANDed; each AnyOf group is ANDed
 // internally, the groups ORed together, and the result ANDed with Where.
 type Query struct {
@@ -64,7 +70,9 @@ func (h *Handle) pk() (*model.Slot, error) {
 func (h *Handle) New(values map[string]any) *Record { return NewRecord(h.Class, values) }
 
 // columnRefs maps slot names to qualified column references (t0.col, t1.col …).
-func (h *Handle) columnRefs() (map[string]string, []*model.Slot) {
+func (h *Handle) columnRefs() (map[string]string, []*model.Slot) { return h.columnRefsAs("t") }
+
+func (h *Handle) columnRefsAs(alias string) (map[string]string, []*model.Slot) {
 	q := h.reg.Dialect.Quote
 	refs := map[string]string{}
 	var order []*model.Slot
@@ -73,17 +81,19 @@ func (h *Handle) columnRefs() (map[string]string, []*model.Slot) {
 			if _, dup := refs[s.Name]; dup {
 				continue
 			}
-			refs[s.Name] = fmt.Sprintf("t%d.%s", i, q(s.Name))
+			refs[s.Name] = fmt.Sprintf("%s%d.%s", alias, i, q(s.Name))
 			order = append(order, s)
 		}
 	}
 	return refs, order
 }
 
-func (h *Handle) fromClause() (string, error) {
+func (h *Handle) fromClause() (string, error) { return h.fromClauseAs("t") }
+
+func (h *Handle) fromClauseAs(alias string) (string, error) {
 	q := h.reg.Dialect.Quote
 	segs := chain(h.Class)
-	from := q(segs[0].table) + " t0"
+	from := q(segs[0].table) + " " + alias + "0"
 	if len(segs) == 1 {
 		return from, nil // join tables (no pk) are fine to list and count
 	}
@@ -92,7 +102,7 @@ func (h *Handle) fromClause() (string, error) {
 		return "", err
 	}
 	for i := 1; i < len(segs); i++ {
-		from += fmt.Sprintf(" JOIN %s t%d ON t%d.%s = t0.%s", q(segs[i].table), i, i, q(pk.Name), q(pk.Name))
+		from += fmt.Sprintf(" JOIN %s %s%d ON %s%d.%s = %s0.%s", q(segs[i].table), alias, i, alias, i, q(pk.Name), alias, q(pk.Name))
 	}
 	return from, nil
 }
@@ -125,6 +135,13 @@ func (h *Handle) buildWhere(qr Query, refs map[string]string) (string, []any, er
 			return col + " IS NULL", nil
 		case "notnull":
 			return col + " IS NOT NULL", nil
+		case "insub":
+			sq, ok := c.Value.(subquery)
+			if !ok {
+				return "", fmt.Errorf("insub needs a framework subquery")
+			}
+			args = append(args, sq.args...)
+			return col + " IN (" + sq.sql + ")", nil
 		case "in":
 			vals, ok := c.Value.([]any)
 			if !ok || len(vals) == 0 {
@@ -251,6 +268,27 @@ func (h *Handle) List(ctx context.Context, qr Query) ([]*Record, error) {
 		out = append(out, rec)
 	}
 	return out, rows.Err()
+}
+
+// idSubquery renders "SELECT pk FROM … WHERE …" for the query, for use as a
+// scoped parent filter.
+func (h *Handle) idSubquery(qr Query, depth int) (subquery, error) {
+	pk, err := h.pk()
+	if err != nil {
+		return subquery{}, err
+	}
+	// Distinct aliases per nesting level keep parent-of-parent subqueries apart.
+	alias := fmt.Sprintf("s%d_", depth)
+	refs, _ := h.columnRefsAs(alias)
+	from, err := h.fromClauseAs(alias)
+	if err != nil {
+		return subquery{}, err
+	}
+	where, args, err := h.buildWhere(qr, refs)
+	if err != nil {
+		return subquery{}, err
+	}
+	return subquery{sql: "SELECT " + refs[pk.Name] + " FROM " + from + where, args: args}, nil
 }
 
 // Count returns how many records match the query (ignoring order and paging).

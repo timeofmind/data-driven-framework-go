@@ -182,9 +182,10 @@ func buildClass(name string, def map[string]any) (*model.Class, error) {
 
 	if a := asMap(def["access"]); len(a) > 0 {
 		c.Access = &model.Access{
-			Owner: str(a["owner"]),
-			Read:  str(a["read"]),
-			Write: str(a["write"]),
+			Owner:  str(a["owner"]),
+			Read:   str(a["read"]),
+			Write:  str(a["write"]),
+			Parent: str(a["parent"]),
 		}
 		if pw := asMap(a["public_when"]); len(pw) > 0 {
 			c.Access.PublicWhen = map[string]string{}

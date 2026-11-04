@@ -124,14 +124,17 @@ Every `belongs_to` gets an inverse `has_many` on the target automatically.
 | class | `order_by: "slot desc"` | Default list ordering |
 | class | `calendar: date_slot` | Front ends may render a calendar view on this date |
 | class | `auth: {login, password, display}` | Marks the class whose rows are login principals |
-| class | `access: {owner, read, write, public_when}` | Row ownership and visibility, enforced by `runtime.Scope` / `CanRead` / `CanWrite` |
+| class | `access: {owner, read, write, public_when, parent}` | Row ownership and visibility, enforced by `Handle.Scope`, `Registry.Readable` / `Registry.Writable` |
 | belongs_to | `on_delete: cascade \| set_null \| restrict` | Foreign-key delete behaviour |
 | has_many | `order_by: "slot asc"` | Ordering when navigating the relationship |
 
 `access.read` is `public` (default), `authenticated` or `owner`; `access.write` is
 `owner` (default when an owner slot is set), `authenticated` or `nobody`.
 `public_when: {visibility: public}` makes matching rows readable by anyone even when
-`read: owner`.
+`read: owner`. `parent: activity_id` (a belongs_to FK) makes rows readable only when
+their parent row is — so a private activity's laps stay private — and, when the class
+has no owner slot, makes writes follow the parent's write rule. Parent scoping is
+applied as an SQL subquery and nests (a parent may itself have a parent).
 
 ## Differences from the Perl framework
 

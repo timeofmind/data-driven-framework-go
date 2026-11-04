@@ -354,11 +354,14 @@ func (c *Constraint) EffectiveName(table string) string {
 //	  read: public                # public | authenticated | owner
 //	  write: owner                # owner | authenticated | nobody
 //	  public_when: {visibility: public}   # rows readable by anyone when all match
+//	  parent: activity_id         # belongs_to FK: rows are readable only when the
+//	                              # parent row is; with no owner slot, writes follow it too
 type Access struct {
 	Owner      string
 	Read       string
 	Write      string
 	PublicWhen map[string]string
+	Parent     string
 }
 
 // Auth is a Go-port extension marking the class whose rows are login principals.

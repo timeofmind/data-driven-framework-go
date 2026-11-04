@@ -23,13 +23,17 @@ func readRule(c *model.Class) string {
 	return c.Access.Read
 }
 
-// WriteRule returns the effective write rule for a class.
+// WriteRule returns the effective write rule for a class: owner,
+// authenticated, nobody, or parent (no owner slot; writes follow the parent row).
 func WriteRule(c *model.Class) string {
 	if c.Access != nil && c.Access.Write != "" {
 		return c.Access.Write
 	}
 	if c.Access != nil && c.Access.Owner != "" {
 		return "owner"
+	}
+	if c.Access != nil && c.Access.Parent != "" {
+		return "parent"
 	}
 	return "authenticated"
 }
@@ -54,11 +58,40 @@ func publicConds(c *model.Class) []Cond {
 
 // Scope narrows a query to the rows p may read. ok is false when p may read
 // nothing at all (for example an anonymous visitor on an owner-only class).
-func (h *Handle) Scope(qr Query, p *Principal) (Query, bool) {
-	c := h.Class
+// With access.parent, rows are further limited to those whose parent row p
+// may read (as an SQL subquery, applied recursively).
+func (h *Handle) Scope(qr Query, p *Principal) (Query, bool) { return h.scope(qr, p, 1) }
+
+func (h *Handle) scope(qr Query, p *Principal, depth int) (Query, bool) {
 	if p != nil && p.Admin {
 		return qr, true
 	}
+	qr, ok := h.ownScope(qr, p)
+	if !ok || h.Class.Access == nil || h.Class.Access.Parent == "" || depth > 8 {
+		return qr, ok
+	}
+	rel := h.Class.BelongsToVia(h.Class.Access.Parent)
+	parent, err := h.reg.Class(rel.Target)
+	if err != nil {
+		return qr, false
+	}
+	pq, pok := parent.scope(Query{}, p, depth+1)
+	if !pok {
+		return qr, false
+	}
+	if len(pq.Where) == 0 && len(pq.AnyOf) == 0 {
+		return qr, true // every parent row is readable
+	}
+	sq, err := parent.idSubquery(pq, depth)
+	if err != nil {
+		return qr, false
+	}
+	qr.Where = append(qr.Where, Cond{Field: h.Class.Access.Parent, Op: "insub", Value: sq})
+	return qr, true
+}
+
+func (h *Handle) ownScope(qr Query, p *Principal) (Query, bool) {
+	c := h.Class
 	owner := ownerSlot(c)
 	pub := publicConds(c)
 	var groups [][]Cond
@@ -91,7 +124,59 @@ func (h *Handle) Scope(qr Query, p *Principal) (Query, bool) {
 	return qr, true
 }
 
-// CanRead reports whether p may read rec.
+// Readable reports whether p may read rec, following access.parent.
+func (r *Registry) Readable(ctx context.Context, rec *Record, p *Principal) (bool, error) {
+	if !CanRead(rec, p) {
+		return false, nil
+	}
+	if p != nil && p.Admin {
+		return true, nil
+	}
+	parent, err := r.accessParent(ctx, rec)
+	if err != nil || parent == nil {
+		return err == nil, err
+	}
+	return r.Readable(ctx, parent, p)
+}
+
+// Writable reports whether p may update or delete rec, following access.parent
+// for classes without an owner slot.
+func (r *Registry) Writable(ctx context.Context, rec *Record, p *Principal) (bool, error) {
+	if p == nil {
+		return false, nil
+	}
+	if p.Admin {
+		return true, nil
+	}
+	if WriteRule(rec.Class) != "parent" {
+		return CanWrite(rec, p), nil
+	}
+	parent, err := r.accessParent(ctx, rec)
+	if err != nil || parent == nil {
+		return false, err
+	}
+	return r.Writable(ctx, parent, p)
+}
+
+// accessParent loads the access.parent row of rec, or nil when there is none.
+func (r *Registry) accessParent(ctx context.Context, rec *Record) (*Record, error) {
+	a := rec.Class.Access
+	if a == nil || a.Parent == "" {
+		return nil, nil
+	}
+	h, err := r.Class(rec.Class.Name)
+	if err != nil {
+		return nil, err
+	}
+	parent, err := h.Parent(ctx, rec, a.Parent)
+	if errors.Is(err, ErrNotFound) {
+		return nil, ErrNotFound
+	}
+	return parent, err
+}
+
+// CanRead reports whether p may read rec by the class's own rules. It does not
+// consult access.parent; use Registry.Readable for that.
 func CanRead(rec *Record, p *Principal) bool {
 	c := rec.Class
 	if p != nil && p.Admin {
@@ -127,7 +212,8 @@ func CanCreate(c *model.Class, p *Principal) bool {
 	return WriteRule(c) != "nobody" && p != nil
 }
 
-// CanWrite reports whether p may update or delete rec.
+// CanWrite reports whether p may update or delete rec by the class's own
+// rules. It returns false for parent-governed classes; use Registry.Writable.
 func CanWrite(rec *Record, p *Principal) bool {
 	if p == nil {
 		return false
@@ -136,7 +222,7 @@ func CanWrite(rec *Record, p *Principal) bool {
 		return true
 	}
 	switch WriteRule(rec.Class) {
-	case "nobody":
+	case "nobody", "parent":
 		return false
 	case "authenticated":
 		return true
