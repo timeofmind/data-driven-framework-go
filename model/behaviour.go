@@ -114,3 +114,172 @@ type ImportCreate struct {
 	Unique     []string
 	Set        []Assign
 }
+
+// Filter lets lists of a class be narrowed by values of another class reached
+// through a has_many link table (e.g. workouts by tag, through WorkoutTag).
+//
+//	filters:
+//	  - name: tag                     # URL parameter (?tag=3&tag=7); default: slot without _id
+//	    label: Tags
+//	    via: tags                     # has_many relationship on this class (to the link class)
+//	    slot: tag_id                  # FK on the link class holding the value
+//	    match: all                    # all (default): every chosen value; any: at least one
+//	    include_children: parent_id   # FK on the value class: a value also matches its descendants
+//	    group_by: sub_activity_id     # FK on the value class to group the choices by
+//	    rank_by_usage: true           # order results by the class's usage log for these values
+type Filter struct {
+	Name            string
+	Label           string
+	Via             string
+	Slot            string
+	Match           string
+	IncludeChildren string
+	GroupBy         string
+	RankByUsage     bool
+}
+
+// Action is an operation offered on a record besides edit and delete. The one
+// kind so far is copy: a new record owned by the person acting, with the
+// source's values, the listed has_many children copied (paths may nest:
+// "sets.intervals"), and Set applied (expressions see the original as source.*).
+//
+//	actions:
+//	  - name: copy
+//	    label: "Copy to my workouts"
+//	    copy: [sets, sets.intervals, tags]
+//	    set: {cloned_from_id: source.id, visibility: "'private'"}
+//	    when: "visibility == 'public'"   # optional, on the source record
+type Action struct {
+	Name  string
+	Label string
+	Copy  []string
+	Set   []Assign
+	When  *expr.Expr
+}
+
+// Usage records each time someone uses a record of this class — links a new
+// record to it, or runs one of its actions — together with the filter values
+// they had chosen to find it, so lists can rank records by how often they were
+// chosen under the same filters.
+//
+//	usage:
+//	  log: WorkoutSelection           # class that gets a row per use (its owner slot = who)
+//	  via: workout_id                 # FK on the log class to the used record
+//	  kind: action                    # enum slot on the log class naming the use
+//	  filter: tag                     # filter whose chosen values are recorded (optional)
+//	  values: search_tags             # has_many on the log class holding those values
+//	  uses:
+//	    - {kind: scheduled, link: PlannedWorkout.workout_id, record: planned_workout_id}
+//	    - {kind: cloned, action: copy, record: clone_id}
+type Usage struct {
+	Log    string
+	Via    string
+	Kind   string
+	Filter string
+	Values string
+	Uses   []UsageUse
+}
+
+// UsageUse is one way of using a record: a new LinkClass row whose LinkVia FK
+// points at it, or running Action. Record is the log's FK to the new row.
+type UsageUse struct {
+	Kind      string
+	LinkClass string
+	LinkVia   string
+	Action    string
+	Record    string
+}
+
+// FilterByName returns the class's filter with that name, or nil.
+func (c *Class) FilterByName(name string) *Filter {
+	for _, f := range c.Filters {
+		if f.Name == name {
+			return f
+		}
+	}
+	return nil
+}
+
+// ActionByName returns the class's action with that name, or nil.
+func (c *Class) ActionByName(name string) *Action {
+	for _, a := range c.Actions {
+		if a.Name == name {
+			return a
+		}
+	}
+	return nil
+}
+
+// RelationshipByName returns the class's relationship (own, inherited or
+// inverse) with that name, or nil.
+func (c *Class) RelationshipByName(name string) *Relationship {
+	for _, r := range c.AllRelationships() {
+		if r.Name == name {
+			return r
+		}
+	}
+	return nil
+}
+
+// FilterValueClass is the class whose rows are a filter's values (e.g. Tag).
+func (m *Model) FilterValueClass(c *Class, f *Filter) *Class {
+	rel := c.RelationshipByName(f.Via)
+	if rel == nil {
+		return nil
+	}
+	link := m.Class(rel.Target)
+	if link == nil {
+		return nil
+	}
+	br := link.BelongsToVia(f.Slot)
+	if br == nil {
+		return nil
+	}
+	return m.Class(br.Target)
+}
+
+// UsesByLink returns the classes whose usage counts a new row of class via
+// the FK slot (e.g. PlannedWorkout.workout_id counts as using a Workout).
+func (m *Model) UsesByLink(class, slot string) []UsageTarget {
+	var out []UsageTarget
+	for _, c := range m.ConcreteClasses() {
+		if c.Usage == nil {
+			continue
+		}
+		for i := range c.Usage.Uses {
+			if u := &c.Usage.Uses[i]; u.LinkClass == class && u.LinkVia == slot {
+				out = append(out, UsageTarget{Class: c, Use: u})
+			}
+		}
+	}
+	return out
+}
+
+// UseByAction returns the usage entry for running a class's action, or nil.
+func (c *Class) UseByAction(action string) *UsageUse {
+	if c.Usage == nil {
+		return nil
+	}
+	for i := range c.Usage.Uses {
+		if c.Usage.Uses[i].Action == action {
+			return &c.Usage.Uses[i]
+		}
+	}
+	return nil
+}
+
+// UsageTarget pairs a class that logs usage with one of its uses.
+type UsageTarget struct {
+	Class *Class
+	Use   *UsageUse
+}
+
+// BelongsToTarget returns the class's first belongs_to pointing at target, or nil.
+func (c *Class) BelongsToTarget(target string) *Relationship {
+	for _, r := range c.AllRelationships() {
+		if r.IsBelongsTo() && r.Target == target {
+			return r
+		}
+	}
+	return nil
+}

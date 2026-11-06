@@ -87,6 +87,145 @@ func validateBehaviour(c *model.Class, m *model.Model) []string {
 	if im := c.Import; im != nil {
 		errs = append(errs, validateImport(c, m, im)...)
 	}
+	errs = append(errs, validateLibrary(c, m)...)
+	return errs
+}
+
+// validateLibrary checks filters, actions and usage.
+func validateLibrary(c *model.Class, m *model.Model) []string {
+	var errs []string
+	add := func(where, format string, a ...any) {
+		errs = append(errs, fmt.Sprintf("Class '%s', %s: %s", c.Name, where, fmt.Sprintf(format, a...)))
+	}
+	names := map[string]bool{}
+	for _, f := range c.Filters {
+		where := "filter " + f.Name
+		if f.Name == "" || names[f.Name] || c.HasSlot(f.Name) || f.Name == "q" || f.Name == "page" || f.Name == "order" || f.Name == "mine" {
+			add(where, "name must be unique and not a slot or reserved parameter (q, page, order, mine)")
+		}
+		names[f.Name] = true
+		if f.Match != "all" && f.Match != "any" {
+			add(where, "match must be all or any")
+		}
+		rel := c.RelationshipByName(f.Via)
+		if rel == nil || !rel.IsHasMany() {
+			add(where, "via %q is not a has_many relationship", f.Via)
+			continue
+		}
+		val := m.FilterValueClass(c, f)
+		if val == nil {
+			add(where, "slot %q is not a belongs_to FK on %s", f.Slot, rel.Target)
+			continue
+		}
+		if f.IncludeChildren != "" {
+			if br := val.BelongsToVia(f.IncludeChildren); br == nil || br.Target != val.Name {
+				add(where, "include_children %q is not a belongs_to FK from %s to itself", f.IncludeChildren, val.Name)
+			}
+		}
+		if f.GroupBy != "" && val.BelongsToVia(f.GroupBy) == nil {
+			add(where, "group_by %q is not a belongs_to FK on %s", f.GroupBy, val.Name)
+		}
+		if f.RankByUsage && (c.Usage == nil || c.Usage.Filter != f.Name) {
+			add(where, "rank_by_usage needs a usage block recording this filter (usage.filter: %s)", f.Name)
+		}
+	}
+	reserved := map[string]bool{"new": true, "edit": true, "delete": true}
+	seen := map[string]bool{}
+	for _, a := range c.Actions {
+		where := "action " + a.Name
+		if reserved[a.Name] || seen[a.Name] {
+			add(where, "name must be unique and not new, edit or delete")
+		}
+		seen[a.Name] = true
+		if len(a.Copy) == 0 && len(a.Set) == 0 {
+			add(where, "nothing to do: give copy and/or set")
+		}
+		for _, path := range a.Copy {
+			cur := c
+			for _, seg := range strings.Split(path, ".") {
+				rel := cur.RelationshipByName(seg)
+				if rel == nil || !rel.IsHasMany() || m.Class(rel.Target) == nil {
+					add(where, "copy path %q: %q is not a has_many of %s", path, seg, cur.Name)
+					break
+				}
+				cur = m.Class(rel.Target)
+			}
+		}
+		sc := scope{"": c, "source": c}
+		for _, as := range a.Set {
+			if !c.HasSlot(as.Slot) {
+				add(where, "%s has no slot %q to set", c.Name, as.Slot)
+			}
+			for _, p := range checkExpr(as.Expr, scope{"source": c}) {
+				add(where, "%s", p)
+			}
+		}
+		for _, p := range checkExpr(a.When, sc) {
+			add(where, "%s", p)
+		}
+	}
+	if u := c.Usage; u != nil {
+		where := "usage"
+		log := m.Class(u.Log)
+		if log == nil {
+			add(where, "log class %q is not defined", u.Log)
+			return errs
+		}
+		if log.IsJoinedChild() {
+			add(where, "log class %s must not use is_a", log.Name)
+		}
+		if br := log.BelongsToVia(u.Via); br == nil || br.Target != c.Name {
+			add(where, "via %q is not a belongs_to FK from %s to %s", u.Via, log.Name, c.Name)
+		}
+		kind := log.Slot(u.Kind)
+		if kind == nil || kind.Type != "enum" {
+			add(where, "kind %q is not an enum slot on %s", u.Kind, log.Name)
+		}
+		if u.Filter != "" {
+			f := c.FilterByName(u.Filter)
+			if f == nil {
+				add(where, "filter %q is not one of %s's filters", u.Filter, c.Name)
+			} else if val := m.FilterValueClass(c, f); val != nil {
+				rel := log.RelationshipByName(u.Values)
+				var vc *model.Class
+				if rel != nil && rel.IsHasMany() {
+					vc = m.Class(rel.Target)
+				}
+				if vc == nil || vc.BelongsToTarget(val.Name) == nil {
+					add(where, "values %q must be a has_many of %s whose class has a belongs_to to %s", u.Values, log.Name, val.Name)
+				}
+			}
+		}
+		if len(u.Uses) == 0 {
+			add(where, "uses is empty")
+		}
+		for _, use := range u.Uses {
+			w := where + " use " + use.Kind
+			if kind != nil && kind.EnumObj != nil && !kind.EnumObj.HasValue(use.Kind) {
+				add(w, "kind %q is not a value of %s", use.Kind, kind.Enum)
+			}
+			switch {
+			case use.LinkClass != "" && use.Action != "":
+				add(w, "give link or action, not both")
+			case use.LinkClass != "":
+				lc := m.Class(use.LinkClass)
+				if lc == nil {
+					add(w, "link class %q is not defined", use.LinkClass)
+				} else if br := lc.BelongsToVia(use.LinkVia); br == nil || br.Target != c.Name {
+					add(w, "link %s.%s is not a belongs_to FK to %s", use.LinkClass, use.LinkVia, c.Name)
+				}
+			case use.Action != "":
+				if c.ActionByName(use.Action) == nil {
+					add(w, "action %q is not one of %s's actions", use.Action, c.Name)
+				}
+			default:
+				add(w, "needs link or action")
+			}
+			if use.Record != "" && log.BelongsToVia(use.Record) == nil {
+				add(w, "record %q is not a belongs_to FK on %s", use.Record, log.Name)
+			}
+		}
+	}
 	return errs
 }
 

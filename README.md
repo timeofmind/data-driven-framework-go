@@ -144,6 +144,20 @@ propagate; every expression is checked against the schema when it loads).
 | has_many | `rank: true` or `rank: {best_per: slot}` | Leaderboard: numbered in `order_by`, optionally best row per slot |
 | has_many | `add_label`, `add_when: expr` | Label and condition (on the parent row) for adding a child |
 
+### Shared libraries (v0.3)
+
+For records people share and re-use (a library of workouts, recipes, templates …):
+
+| Where | Attribute | Meaning |
+|---|---|---|
+| belongs_to | `link: own \| readable` | Which target rows may be linked: `own` (default when the target has an owner) only the linker's own rows; `readable` any row they can read — e.g. shared tags, or someone else's public record |
+| class | `filters: [{name, label, via, slot, match, include_children, group_by, rank_by_usage}]` | Narrow lists by values reached through a has_many link class (`?tag=3&tag=7`). `match: all` (default) needs every value, `any` one; `include_children: parent_fk` lets a value match its descendants; `group_by` groups the choices |
+| class | `actions: [{name, label, copy, set, when}]` | A copy action: a new record owned by the person acting, with the source's values, `copy: [children, children.grandchildren]` duplicated, and `set` applied (`source.*` is the original) |
+| class | `usage: {log, via, kind, filter, values, uses}` | Log every use of a record — a new row linking to it (`link: Class.fk`) or an action (`action: copy`) — with the filter values chosen to find it. `rank_by_usage` on that filter orders lists by how many people chose each record with exactly those values, then with at least those values, then at all |
+
+`Handle.FilterConds`, `Handle.RankByUsage`, `Registry.LogUsage` and `Registry.Copy`
+implement these for front ends.
+
 `Handle.Import` executes an import block for a parsed `ImportSource`; the file-format
 readers live in the application server (e.g. the Caddy module), not here.
 

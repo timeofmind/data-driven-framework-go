@@ -288,6 +288,10 @@ type Relationship struct {
 	Rank     *Rank      // leaderboard numbering, optionally best row per slot
 	AddLabel string     // label for the "add" action, e.g. "Register"
 	AddWhen  *expr.Expr // the add action is offered only when this holds for the parent row
+
+	// belongs_to: which target rows may be linked. "own" (the default for targets
+	// with an owner): only the linker's own rows; "readable": any row they can read.
+	Link string
 }
 
 func NewRelationship(r Relationship) (*Relationship, error) {
@@ -306,6 +310,14 @@ func NewRelationship(r Relationship) (*Relationship, error) {
 	case "", "cascade", "set_null", "restrict":
 	default:
 		return nil, fmt.Errorf("relationship %q: on_delete must be cascade, set_null or restrict", r.Name)
+	}
+	switch r.Link {
+	case "", "own", "readable":
+	default:
+		return nil, fmt.Errorf("relationship %q: link must be own or readable", r.Name)
+	}
+	if r.Link != "" && r.Kind != "belongs_to" {
+		return nil, fmt.Errorf("relationship %q: link applies to belongs_to only", r.Name)
 	}
 	return &r, nil
 }
@@ -401,6 +413,9 @@ type Class struct {
 	CalendarLabel *expr.Expr // text for calendar entries; falls back to the display slot
 	Triggers      []*Trigger
 	Import        *Import
+	Filters       []*Filter
+	Actions       []*Action
+	Usage         *Usage
 
 	ParentClass   *Class  // set by the resolver
 	ResolvedSlots []*Slot // own + inherited, set by the resolver

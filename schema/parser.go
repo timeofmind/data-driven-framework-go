@@ -7,6 +7,7 @@ import (
 	"os"
 	"sort"
 	"strconv"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 
@@ -240,6 +241,7 @@ func buildRelationship(owner, kind string, d map[string]any) (*model.Relationshi
 		Rank:        rank,
 		AddLabel:    str(d["add_label"]),
 		AddWhen:     addWhen,
+		Link:        str(d["link"]),
 		Kind:        kind,
 		Name:        rname,
 		Target:      target,
@@ -494,6 +496,51 @@ func buildBehaviour(c *model.Class, def map[string]any) error {
 			im.Creates = append(im.Creates, cr)
 		}
 		c.Import = im
+	}
+	for _, item := range asList(def["filters"]) {
+		d := asMap(item)
+		f := &model.Filter{
+			Name: str(d["name"]), Label: str(d["label"]), Via: str(d["via"]), Slot: str(d["slot"]),
+			Match: str(d["match"]), IncludeChildren: str(d["include_children"]), GroupBy: str(d["group_by"]),
+			RankByUsage: truthy(d["rank_by_usage"]),
+		}
+		if f.Name == "" {
+			f.Name = strings.TrimSuffix(f.Slot, "_id")
+		}
+		if f.Match == "" {
+			f.Match = "all"
+		}
+		c.Filters = append(c.Filters, f)
+	}
+	for _, item := range asList(def["actions"]) {
+		d := asMap(item)
+		a := &model.Action{Name: str(d["name"]), Label: str(d["label"]), Copy: strList(d["copy"])}
+		if a.Name == "" {
+			return fmt.Errorf("action entry missing name")
+		}
+		if a.Set, err = assigns("action "+a.Name+" set", d["set"]); err != nil {
+			return err
+		}
+		if a.When, err = optExpr(d, "when"); err != nil {
+			return fmt.Errorf("action %s: %w", a.Name, err)
+		}
+		c.Actions = append(c.Actions, a)
+	}
+	if d := asMap(def["usage"]); len(d) > 0 {
+		u := &model.Usage{Log: str(d["log"]), Via: str(d["via"]), Kind: str(d["kind"]), Filter: str(d["filter"]), Values: str(d["values"])}
+		for _, item := range asList(d["uses"]) {
+			ud := asMap(item)
+			use := model.UsageUse{Kind: str(ud["kind"]), Action: str(ud["action"]), Record: str(ud["record"])}
+			if l := str(ud["link"]); l != "" {
+				cls, via, ok := strings.Cut(l, ".")
+				if !ok {
+					return fmt.Errorf("usage use %q: link must be Class.fk_slot", use.Kind)
+				}
+				use.LinkClass, use.LinkVia = cls, via
+			}
+			u.Uses = append(u.Uses, use)
+		}
+		c.Usage = u
 	}
 	return nil
 }

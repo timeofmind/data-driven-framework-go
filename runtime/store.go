@@ -42,7 +42,12 @@ type Query struct {
 	OrderBy string // "slot [asc|desc], ..."; defaults to the class order_by, then pk
 	Limit   int
 	Offset  int
+
+	rank []subquery // framework-built ORDER BY terms placed before OrderBy (e.g. usage ranking)
 }
+
+// Ranked reports whether the query has framework ranking terms (see RankByUsage).
+func (q Query) Ranked() bool { return len(q.rank) > 0 }
 
 // segment is one table in a class's joined-table inheritance chain.
 type segment struct {
@@ -234,6 +239,14 @@ func (h *Handle) List(ctx context.Context, qr Query) ([]*Record, error) {
 	order, err := h.orderClause(qr.OrderBy, refs)
 	if err != nil {
 		return nil, err
+	}
+	if len(qr.rank) > 0 {
+		var terms []string
+		for _, t := range qr.rank {
+			terms = append(terms, strings.ReplaceAll(t.sql, "{id}", refs[h.Class.PKSlot().Name])+" DESC")
+			args = append(args, t.args...)
+		}
+		order = " ORDER BY " + strings.Join(terms, ", ") + ", " + strings.TrimPrefix(order, " ORDER BY ")
 	}
 	cols := make([]string, len(slots))
 	for i, s := range slots {
