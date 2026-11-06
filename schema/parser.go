@@ -132,9 +132,13 @@ func buildClass(name string, def map[string]any) (*model.Class, error) {
 		Display:     str(def["display"]),
 		OrderBy:     str(def["order_by"]),
 		Calendar:    str(def["calendar"]),
+		CalendarEnd: str(def["calendar_end"]),
 	}
 	if v, ok := def["search"]; ok && !truthy(v) {
 		c.NoSearch = true
+	}
+	if v, ok := def["personal_calendar"]; ok && !truthy(v) {
+		c.NotPersonal = true
 	}
 
 	if slots, ok := def["slots"].([]any); ok {

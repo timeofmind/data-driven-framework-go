@@ -101,7 +101,7 @@ func Computed(rec *Record) []ComputedValue {
 // calendar_label when it evaluates to a value, else the record title.
 func CalendarText(rec *Record) string {
 	if e := rec.Class.CalendarLabel; e != nil {
-		if v, err := e.Eval(envOf(layer{rec: rec})); err == nil && v != nil {
+		if v, err := e.Eval(ownEnv(rec)); err == nil && v != nil {
 			if s := expr.Format(v); s != "" {
 				return s
 			}

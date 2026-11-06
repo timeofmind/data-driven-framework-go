@@ -47,7 +47,7 @@ func validateBehaviour(c *model.Class, m *model.Model) []string {
 		}
 	}
 	own := scope{"": c}
-	add("calendar_label", checkExpr(c.CalendarLabel, own))
+	add("calendar_label", checkPathExpr(c.CalendarLabel, c, m))
 	for _, cp := range c.Computed {
 		add("computed "+cp.Name, checkExpr(cp.Expr, own))
 		add("computed "+cp.Name, checkExpr(cp.When, own))
@@ -104,7 +104,7 @@ func validateRules(c *model.Class, m *model.Model) []string {
 		}
 	}
 	own := scope{"": c}
-	add("title", checkExpr(c.Title, own))
+	add("title", checkPathExpr(c.Title, c, m))
 	for _, s := range c.Slots {
 		if s.Sequence != "" {
 			if s.Type != "integer" {

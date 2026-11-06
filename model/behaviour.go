@@ -348,3 +348,16 @@ func ResolvePath(m *Model, c *Class, path string) ([]LinkStep, error) {
 	}
 	return steps, nil
 }
+
+// PathSlot returns the slot a path (own slot or link path) ends at, or nil.
+func PathSlot(m *Model, c *Class, path string) *Slot {
+	steps, err := ResolvePath(m, c, path)
+	if err != nil {
+		return nil
+	}
+	cur := c
+	if len(steps) > 0 {
+		cur = steps[len(steps)-1].Class
+	}
+	return cur.Slot(path[strings.LastIndexByte(path, '.')+1:])
+}

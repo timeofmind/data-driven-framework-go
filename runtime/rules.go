@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/timeofmind/data-driven-framework-go/expr"
@@ -26,26 +27,92 @@ func ownEnv(rec *Record) expr.Env {
 	}
 }
 
-// LoadLinks fetches the linked values (set.workout.sport) the class's when
-// and required_when rules read, so SlotApplies and SlotRequired can use them.
-// Save calls it; front ends call it before deciding which fields to show.
+// LoadLinks fetches the linked values (set.workout.sport) the class's
+// when, required_when, title and calendar rules read, so SlotApplies,
+// SlotRequired, Title and the calendar can use them. Save calls it; front
+// ends call it before deciding which fields to show.
 func (r *Registry) LoadLinks(ctx context.Context, rec *Record) {
 	rec.links = map[string]any{}
-	for _, s := range rec.Class.AllSlots() {
-		for _, e := range []*expr.Expr{s.When, s.RequiredWhen} {
-			if e == nil {
-				continue
-			}
-			for _, id := range e.Idents() {
-				if _, done := rec.links[id]; done || !strings.Contains(id, ".") {
-					continue
-				}
-				if v, err := r.pathValue(ctx, rec, id); err == nil {
-					rec.links[id] = v
-				}
-			}
+	c := rec.Class
+	var names []string
+	exprs := []*expr.Expr{c.Title, c.CalendarLabel}
+	for _, s := range c.AllSlots() {
+		exprs = append(exprs, s.When, s.RequiredWhen)
+	}
+	for _, e := range exprs {
+		if e != nil {
+			names = append(names, e.Idents()...)
 		}
 	}
+	names = append(names, c.Calendar, c.CalendarEnd)
+	for _, id := range names {
+		if _, done := rec.links[id]; done || !strings.Contains(id, ".") {
+			continue
+		}
+		if v, err := r.pathValue(ctx, rec, id); err == nil {
+			rec.links[id] = v
+		}
+	}
+}
+
+// CalendarSpan is a record and the days it covers (YYYY-MM-DD, inclusive).
+type CalendarSpan struct {
+	Rec      *Record
+	From, To string
+}
+
+// CalendarSpans lists the records matching q (already scoped by the caller)
+// that cover any day from..to (YYYY-MM-DD), with the days each covers: from
+// its calendar date to its calendar_end (or the same day), either of which
+// may be a date on a linked record.
+func (h *Handle) CalendarSpans(ctx context.Context, q Query, from, to string) ([]CalendarSpan, error) {
+	c := h.Class
+	if c.Calendar == "" {
+		return nil, nil
+	}
+	if !c.CalendarIsPath() {
+		q.Where = append(q.Where, Cond{Field: c.Calendar, Op: "<=", Value: to + " 23:59:59"})
+		if c.CalendarEnd == "" {
+			q.Where = append(q.Where, Cond{Field: c.Calendar, Op: ">=", Value: from})
+		}
+		q.OrderBy = c.Calendar + " asc"
+	}
+	if q.Limit == 0 {
+		q.Limit = 1000
+	}
+	recs, err := h.List(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	var out []CalendarSpan
+	for _, rec := range recs {
+		if c.CalendarIsPath() || c.Title != nil || c.CalendarLabel != nil {
+			h.reg.LoadLinks(ctx, rec)
+		}
+		day := func(path string) string {
+			v, _ := ownEnv(rec)(path)
+			s := expr.Format(v)
+			if len(s) > 10 {
+				s = s[:10]
+			}
+			return s
+		}
+		start := day(c.Calendar)
+		if start == "" {
+			continue
+		}
+		end := start
+		if c.CalendarEnd != "" {
+			if e := day(c.CalendarEnd); e > start {
+				end = e
+			}
+		}
+		if start <= to && end >= from {
+			out = append(out, CalendarSpan{Rec: rec, From: start, To: end})
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].From < out[j].From })
+	return out, nil
 }
 
 // SlotApplies reports whether a slot's when-condition holds for rec. A rule

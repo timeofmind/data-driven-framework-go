@@ -170,13 +170,15 @@ only what fits:
 | class | `title: <expr>` | Record title in links, pickers and headings, e.g. `name + ' (' + low + '–' + high + '%)'`; falls back to `display` |
 | slot | `when: <expr>` | The field applies only while this holds; otherwise its value is cleared on save and it is not shown |
 | slot | `required_when: <expr>` | Required while this holds (and the field applies) |
+| class | `calendar: a.b.date`, `calendar_end: …` | The calendar date may live on a linked record (an entry shows on its competition's date), and `calendar_end` makes a record cover every day up to that date (a three-day meet). `Handle.CalendarSpans` lists what covers a range of days |
+| class | `personal_calendar: false` | The class has a calendar view of its own, but its rows are left off their owner's personal calendar (a shared listing, as opposed to someone's entry in it) |
 | slot | `default_expr: <expr>` | A new record's starting value, computed from its values and links — e.g. `if(set.workout.sport == 'strength', 'weight', 'distance')`. Shown on new forms and applied on insert; a value given wins |
 | slot (integer) | `sequence: {within: parent_fk}` | Numbers rows within their parent — e.g. set # within a workout. Assigned on save: a new row, or one moved to another parent, gets the number after that parent's highest; otherwise a row keeps its number. Unique per parent (a unique constraint is added) and never entered by hand (the slot is read-only) |
 | slot (enum) | `options: [{when: <expr>, values: [...]}]` | The first rule whose `when` holds limits the allowed values — e.g. surfaces by sport |
 | belongs_to | `match: {target_slot: <expr>}` | Only target rows whose slot equals the expression may be linked — e.g. `{sport: sport}` for sub-activities of the chosen sport. A null value (nothing chosen yet) adds no limit |
 | class | `checks: [{check: <expr>, message, slot, client}]` | The record is saved only when every check holds; the message is shown against `slot` (or the form). `client: true` (own slots only) also runs it in the browser |
 
-`title` reads the record's own slots only. Every other rule may also follow belongs_to
+Every rule, `title` and `calendar_label` included, may follow belongs_to
 links with dotted paths — `set.workout.sport` or `set_id.workout_id.sport` — loaded
 when the rule runs (`Registry.LoadLinks` before `SlotApplies` / `SlotRequired`; a
 `when` whose links were not loaded counts as holding, so nothing is hidden or cleared

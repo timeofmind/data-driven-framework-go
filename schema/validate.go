@@ -108,15 +108,25 @@ func validateClass(c *model.Class, m *model.Model) []string {
 		}
 	}
 
-	for attr, slot := range map[string]string{"display": c.Display, "order_by": orderSlot(c.OrderBy), "calendar": c.Calendar} {
+	for attr, slot := range map[string]string{"display": c.Display, "order_by": orderSlot(c.OrderBy)} {
 		if slot != "" && !c.HasSlot(slot) {
 			add("Class '%s': %s slot '%s' is not defined", cn, attr, slot)
 		}
 	}
-	if c.Calendar != "" {
-		if s := c.Slot(c.Calendar); s != nil && s.Type != "date" && s.Type != "datetime" {
-			add("Class '%s': calendar slot '%s' must be a date or datetime", cn, c.Calendar)
+	for attr, path := range map[string]string{"calendar": c.Calendar, "calendar_end": c.CalendarEnd} {
+		if path == "" {
+			continue
 		}
+		if _, err := model.ResolvePath(m, c, path); err != nil {
+			add("Class '%s': %s %q: %v", cn, attr, path, err)
+			continue
+		}
+		if s := model.PathSlot(m, c, path); s != nil && s.Type != "date" && s.Type != "datetime" {
+			add("Class '%s': %s '%s' must be a date or datetime", cn, attr, path)
+		}
+	}
+	if c.CalendarEnd != "" && c.Calendar == "" {
+		add("Class '%s': calendar_end needs calendar", cn)
 	}
 
 	if a := c.Access; a != nil {

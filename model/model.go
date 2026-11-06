@@ -442,7 +442,14 @@ type Class struct {
 	// Go-port extensions (all optional).
 	Display  string // slot used as the record's title in links and selectors
 	OrderBy  string // default list ordering, "slot [asc|desc]"
-	Calendar string // date slot; front ends may render a calendar view
+	Calendar string // date slot, or a path to one on a linked record (competition.start_date); front ends may render a calendar view
+	// CalendarEnd: the last day a record covers (same forms as Calendar), so a
+	// multi-day record shows on every day from Calendar to CalendarEnd.
+	CalendarEnd string
+	// NotPersonal (personal_calendar: false): the class has its own calendar
+	// view but its rows do not appear on their owner's personal calendar —
+	// e.g. a shared listing someone added, as opposed to their entry in it.
+	NotPersonal bool
 	Access   *Access
 	Auth     *Auth
 
@@ -679,4 +686,9 @@ func sortedKeys[V any](m map[string]V) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+// CalendarIsPath reports whether the calendar date lives on a linked record.
+func (c *Class) CalendarIsPath() bool {
+	return strings.Contains(c.Calendar, ".") || strings.Contains(c.CalendarEnd, ".")
 }
