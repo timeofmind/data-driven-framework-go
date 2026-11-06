@@ -161,7 +161,7 @@ func (r *Registry) CheckRules(ctx context.Context, rec *Record) FieldErrors {
 			continue // a missing target is reported elsewhere
 		}
 		for _, cd := range r.MatchConds(ctx, rec, rel) {
-			if fmt.Sprint(expr.Normalize(target.Values[cd.Field])) != fmt.Sprint(expr.Normalize(cd.Value)) {
+			if !Matches(target, []Cond{cd}) {
 				errs[rel.Via] = "doesn't fit the rest of the form"
 				if s := matchSource(rel, cd.Field, c); s != nil {
 					errs[rel.Via] = "doesn't fit the chosen " + strings.ToLower(s.EffectiveLabel())
@@ -205,4 +205,27 @@ func contains(list []string, v string) bool {
 		}
 	}
 	return false
+}
+
+// GivenValues evaluates names (own slots or dotted link paths) for rec, for a
+// browser form that has no input for them (generator.ClientClass.Given).
+func (r *Registry) GivenValues(ctx context.Context, rec *Record, names []string) map[string]any {
+	env := r.pathEnv(ctx, rec)
+	out := map[string]any{}
+	for _, n := range names {
+		if v, ok := env(n); ok {
+			out[n] = v
+		}
+	}
+	return out
+}
+
+// Matches reports whether a target row satisfies conditions from MatchConds.
+func Matches(target *Record, conds []Cond) bool {
+	for _, cd := range conds {
+		if fmt.Sprint(expr.Normalize(target.Values[cd.Field])) != fmt.Sprint(expr.Normalize(cd.Value)) {
+			return false
+		}
+	}
+	return true
 }

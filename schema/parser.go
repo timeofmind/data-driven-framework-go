@@ -462,7 +462,7 @@ func buildBehaviour(c *model.Class, def map[string]any) error {
 	if list, ok := def["checks"].([]any); ok {
 		for _, item := range list {
 			d := asMap(item)
-			ck := &model.Check{Message: str(d["message"]), Slot: str(d["slot"])}
+			ck := &model.Check{Message: str(d["message"]), Slot: str(d["slot"]), Client: truthy(d["client"])}
 			if ck.Expr, err = parseExpr("check", d["check"]); err != nil {
 				return err
 			}

@@ -172,7 +172,7 @@ only what fits:
 | slot | `required_when: <expr>` | Required while this holds (and the field applies) |
 | slot (enum) | `options: [{when: <expr>, values: [...]}]` | The first rule whose `when` holds limits the allowed values — e.g. surfaces by sport |
 | belongs_to | `match: {target_slot: <expr>}` | Only target rows whose slot equals the expression may be linked — e.g. `{sport: sport}` for sub-activities of the chosen sport. A null value (nothing chosen yet) adds no limit |
-| class | `checks: [{check: <expr>, message, slot}]` | The record is saved only when every check holds; the message is shown against `slot` (or the form) |
+| class | `checks: [{check: <expr>, message, slot, client}]` | The record is saved only when every check holds; the message is shown against `slot` (or the form). `client: true` (own slots only) also runs it in the browser |
 
 `title`, `when` and `required_when` read the record's own slots only (so they can be
 evaluated in the browser). `options`, `match` and `checks` may also follow belongs_to
@@ -180,6 +180,17 @@ links with dotted paths — `set.workout.sport` or `set_id.workout_id.sport` —
 when the rule runs. `Registry.AllowedValues`, `Registry.MatchConds`, `SlotApplies` and
 `SlotRequired` expose the rules to front ends; `Handle.Save` reports every broken rule
 at once.
+
+### Rules in the browser (v0.6)
+
+`generator.ClientRules` (and `ClientRulesJSON`, stable for a schema) gives each
+class's `when`, `required_when`, `options`, `match` and client `checks` in a form a
+browser can apply while a form is filled in: expressions as trees (`Expr.Tree()`), the
+type of every slot they read, and the names the server must supply because the form
+has no input for them (`Given` — link paths such as `set.workout.sport`, filled with
+`Registry.GivenValues`). `expr.Conformance` is a list of cases every evaluator —
+Go and the browser runtime — is tested against, so they cannot drift apart. The server
+stays the authority: every rule is enforced again on save.
 
 `Handle.Import` executes an import block for a parsed `ImportSource`; the file-format
 readers live in the application server (e.g. the Caddy module), not here.

@@ -298,11 +298,13 @@ type OptionRule struct {
 }
 
 // Check is a class rule: Expr must hold for a record to be saved. Slot, if
-// set, is the field the message is shown against.
+// set, is the field the message is shown against. Client checks (own slots
+// only) are also run in the browser as the form is filled in.
 type Check struct {
 	Expr    *expr.Expr
 	Message string
 	Slot    string
+	Client  bool
 }
 
 // LinkStep is one belongs_to hop in a path such as set_id.workout_id.sport.

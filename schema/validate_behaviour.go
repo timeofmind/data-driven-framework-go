@@ -142,7 +142,11 @@ func validateRules(c *model.Class, m *model.Model) []string {
 		}
 	}
 	for _, ck := range c.Checks {
-		add("check", checkPathExpr(ck.Expr, c, m))
+		if ck.Client {
+			add("check (client)", checkExpr(ck.Expr, own))
+		} else {
+			add("check", checkPathExpr(ck.Expr, c, m))
+		}
 		if ck.Slot != "" && !c.HasSlot(ck.Slot) {
 			add("check", []string{fmt.Sprintf("slot %q is not defined", ck.Slot)})
 		}
