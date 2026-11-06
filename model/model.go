@@ -450,8 +450,8 @@ type Class struct {
 	// view but its rows do not appear on their owner's personal calendar —
 	// e.g. a shared listing someone added, as opposed to their entry in it.
 	NotPersonal bool
-	Access   *Access
-	Auth     *Auth
+	Access      *Access
+	Auth        *Auth
 
 	Computed      []*Computed
 	CalendarLabel *expr.Expr // text for calendar entries; falls back to the display slot

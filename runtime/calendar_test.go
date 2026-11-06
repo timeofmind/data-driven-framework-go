@@ -71,7 +71,7 @@ func TestCalendarSpans(t *testing.T) {
 		})
 	}
 	for bad, want := range map[string]string{
-		"calendar: meet.start_date\n":  `calendar "meet.nope"`,
+		"calendar: meet.start_date\n":   `calendar "meet.nope"`,
 		"calendar_end: meet.end_date\n": `calendar_end 'meet.name' must be a date`,
 	} {
 		repl := map[string]string{"calendar: meet.start_date\n": "calendar: meet.nope\n", "calendar_end: meet.end_date\n": "calendar_end: meet.name\n"}[bad]
