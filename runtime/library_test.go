@@ -37,6 +37,7 @@ classes:
         - {target: Label, via: parent_id, on_delete: cascade}
   Recipe:
     display: title
+    search: false
     access: {owner: cook_id, read: owner, public_when: {visibility: public}}
     filters:
       - {via: labels, slot: label_id, include_children: parent_id, rank_by_usage: true}
@@ -177,6 +178,9 @@ func TestLibrary(t *testing.T) {
 			steps.Save(ctx, steps.New(map[string]any{"recipe_id": sourdough.ID(), "n": int64(1), "text": "Feed starter"}))
 			steps.Save(ctx, steps.New(map[string]any{"recipe_id": sourdough.ID(), "n": int64(2), "text": "Bake"}))
 
+			if !recipes.Class.NoSearch || labels.Class.NoSearch {
+				t.Error("search: false should set NoSearch on Recipe only")
+			}
 			f := recipes.Class.FilterByName("label")
 			find := func(pr *runtime.Principal, ids ...int64) string {
 				conds, err := recipes.FilterConds(ctx, f, ids)

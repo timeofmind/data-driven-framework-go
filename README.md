@@ -151,7 +151,8 @@ For records people share and re-use (a library of workouts, recipes, templates �
 | Where | Attribute | Meaning |
 |---|---|---|
 | belongs_to | `link: own \| readable` | Which target rows may be linked: `own` (default when the target has an owner) only the linker's own rows; `readable` any row they can read — e.g. shared tags, or someone else's public record |
-| class | `filters: [{name, label, via, slot, match, include_children, group_by, rank_by_usage}]` | Narrow lists by values reached through a has_many link class (`?tag=3&tag=7`). `match: all` (default) needs every value, `any` one; `include_children: parent_fk` lets a value match its descendants; `group_by` groups the choices |
+| class | `search: false` | Lists of the class offer no free-text search — e.g. a library found only through its filters |
+| class | `filters: [{name, label, via, slot, match, include_children, group_by, collapse_groups, rank_by_usage}]` | Narrow lists by values reached through a has_many link class (`?tag=3&tag=7`). `match: all` (default) needs every value, `any` one; `include_children: parent_fk` lets a value match its descendants; `group_by` groups the choices, and `collapse_groups` shows each group closed until opened |
 | class | `actions: [{name, label, copy, set, when}]` | A copy action: a new record owned by the person acting, with the source's values, `copy: [children, children.grandchildren]` duplicated, and `set` applied (`source.*` is the original) |
 | class | `usage: {log, via, kind, filter, values, uses}` | Log every use of a record — a new row linking to it (`link: Class.fk`) or an action (`action: copy`) — with the filter values chosen to find it. `rank_by_usage` on that filter orders lists by how many people chose each record with exactly those values, then with at least those values, then at all |
 

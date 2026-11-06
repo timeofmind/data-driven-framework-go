@@ -120,6 +120,9 @@ func buildClass(name string, def map[string]any) (*model.Class, error) {
 		OrderBy:     str(def["order_by"]),
 		Calendar:    str(def["calendar"]),
 	}
+	if v, ok := def["search"]; ok && !truthy(v) {
+		c.NoSearch = true
+	}
 
 	if slots, ok := def["slots"].([]any); ok {
 		for _, sd := range slots {
@@ -502,7 +505,7 @@ func buildBehaviour(c *model.Class, def map[string]any) error {
 		f := &model.Filter{
 			Name: str(d["name"]), Label: str(d["label"]), Via: str(d["via"]), Slot: str(d["slot"]),
 			Match: str(d["match"]), IncludeChildren: str(d["include_children"]), GroupBy: str(d["group_by"]),
-			RankByUsage: truthy(d["rank_by_usage"]),
+			RankByUsage: truthy(d["rank_by_usage"]), CollapseGroups: truthy(d["collapse_groups"]),
 		}
 		if f.Name == "" {
 			f.Name = strings.TrimSuffix(f.Slot, "_id")

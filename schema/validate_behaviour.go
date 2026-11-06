@@ -125,6 +125,9 @@ func validateLibrary(c *model.Class, m *model.Model) []string {
 		if f.GroupBy != "" && val.BelongsToVia(f.GroupBy) == nil {
 			add(where, "group_by %q is not a belongs_to FK on %s", f.GroupBy, val.Name)
 		}
+		if f.CollapseGroups && f.GroupBy == "" {
+			add(where, "collapse_groups needs group_by")
+		}
 		if f.RankByUsage && (c.Usage == nil || c.Usage.Filter != f.Name) {
 			add(where, "rank_by_usage needs a usage block recording this filter (usage.filter: %s)", f.Name)
 		}

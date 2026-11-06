@@ -416,6 +416,7 @@ type Class struct {
 	Filters       []*Filter
 	Actions       []*Action
 	Usage         *Usage
+	NoSearch      bool // search: false — lists offer no free-text search (e.g. filter-only libraries)
 
 	ParentClass   *Class  // set by the resolver
 	ResolvedSlots []*Slot // own + inherited, set by the resolver

@@ -125,7 +125,8 @@ type ImportCreate struct {
 //	    slot: tag_id                  # FK on the link class holding the value
 //	    match: all                    # all (default): every chosen value; any: at least one
 //	    include_children: parent_id   # FK on the value class: a value also matches its descendants
-//	    group_by: sub_activity_id     # FK on the value class to group the choices by
+//	    group_by: category_id         # FK on the value class to group the choices by
+//	    collapse_groups: true         # show groups closed until opened (or holding a choice)
 //	    rank_by_usage: true           # order results by the class's usage log for these values
 type Filter struct {
 	Name            string
@@ -135,6 +136,7 @@ type Filter struct {
 	Match           string
 	IncludeChildren string
 	GroupBy         string
+	CollapseGroups  bool
 	RankByUsage     bool
 }
 
