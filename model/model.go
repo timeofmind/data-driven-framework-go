@@ -160,6 +160,22 @@ type Enum struct {
 	Values      []string
 	Default     *string
 	Description string
+	Labels      map[string]string // optional display text per value
+}
+
+// Label returns the display text for an enum value: its declared label, else
+// the value with underscores as spaces and the first letter capitalised.
+func (e *Enum) Label(v string) string {
+	if l, ok := e.Labels[v]; ok && l != "" {
+		return l
+	}
+	s := strings.ReplaceAll(v, "_", " ")
+	if s == "" {
+		return s
+	}
+	r := []rune(s)
+	r[0] = unicode.ToUpper(r[0])
+	return string(r)
 }
 
 func NewEnum(name string, values []string, def *string, desc string) (*Enum, error) {
@@ -213,6 +229,14 @@ type Slot struct {
 	Min     *float64
 	Max     *float64
 	Pattern string
+
+	// Rules (Go-port extensions). When: the slot applies only while this holds
+	// for the record — otherwise its value is cleared on save and it is not
+	// shown. RequiredWhen: required while this holds. Options: for enum slots,
+	// the first rule whose when holds limits the allowed values.
+	When         *expr.Expr
+	RequiredWhen *expr.Expr
+	Options      []*OptionRule
 
 	EnumObj   *Enum  // set by the resolver
 	DefinedIn string // class the slot was declared in
@@ -292,6 +316,10 @@ type Relationship struct {
 	// belongs_to: which target rows may be linked. "own" (the default for targets
 	// with an owner): only the linker's own rows; "readable": any row they can read.
 	Link string
+
+	// belongs_to: Match limits linkable target rows to those whose slot equals
+	// the expression evaluated on the linking record, e.g. {sport: sport}.
+	Match []Assign
 }
 
 func NewRelationship(r Relationship) (*Relationship, error) {
@@ -416,7 +444,9 @@ type Class struct {
 	Filters       []*Filter
 	Actions       []*Action
 	Usage         *Usage
-	NoSearch      bool // search: false — lists offer no free-text search (e.g. filter-only libraries)
+	NoSearch      bool       // search: false — lists offer no free-text search (e.g. filter-only libraries)
+	Title         *expr.Expr // record title in links, pickers and headings; falls back to the display slot
+	Checks        []*Check   // rules a record must satisfy to be saved
 
 	ParentClass   *Class  // set by the resolver
 	ResolvedSlots []*Slot // own + inherited, set by the resolver

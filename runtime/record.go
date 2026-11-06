@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/timeofmind/data-driven-framework-go/expr"
 	"github.com/timeofmind/data-driven-framework-go/model"
 )
 
@@ -93,8 +94,16 @@ func (r *Record) Set(name string, raw any) error {
 	return nil
 }
 
-// Title returns the record's display text (its display slot, else "#id").
+// Title returns the record's display text: the class's title expression,
+// else its display slot, else "#id".
 func (r *Record) Title() string {
+	if e := r.Class.Title; e != nil {
+		if v, err := e.Eval(ownEnv(r)); err == nil && v != nil {
+			if t := expr.Format(v); t != "" {
+				return t
+			}
+		}
+	}
 	if s := r.Class.DisplaySlot(); s != nil {
 		if t := r.String(s.Name); t != "" && s != r.Class.PKSlot() {
 			return t
@@ -173,7 +182,7 @@ func (r *Record) Validate() FieldErrors {
 		}
 		v := r.Values[s.Name]
 		if v == nil || v == "" {
-			if s.Required && s.Type != "boolean" {
+			if SlotRequired(r, s) && s.Type != "boolean" {
 				errs[s.Name] = "is required"
 			}
 			continue
@@ -466,9 +475,11 @@ func DisplayValue(s *model.Slot, v any) string {
 			return "No"
 		}
 	case "enum":
-		str := FormatValue(v)
-		str = strings.ReplaceAll(str, "_", " ")
-		if str != "" {
+		if str := FormatValue(v); str != "" {
+			if s.EnumObj != nil {
+				return s.EnumObj.Label(str)
+			}
+			str = strings.ReplaceAll(str, "_", " ")
 			return strings.ToUpper(str[:1]) + str[1:]
 		}
 	case "float":

@@ -353,7 +353,17 @@ func (h *Handle) Save(ctx context.Context, rec *Record) error {
 	if rec.Class != h.Class {
 		return fmt.Errorf("save: record is a %s, handle is %s", rec.Class.Name, h.Class.Name)
 	}
-	if errs := rec.Validate(); errs != nil {
+	clearInapplicable(rec)
+	errs := rec.Validate()
+	for k, v := range h.reg.CheckRules(ctx, rec) {
+		if errs == nil {
+			errs = FieldErrors{}
+		}
+		if _, taken := errs[k]; !taken {
+			errs[k] = v
+		}
+	}
+	if errs != nil {
 		return errs
 	}
 	for _, s := range h.Class.AllSlots() {

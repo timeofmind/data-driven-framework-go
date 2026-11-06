@@ -1,6 +1,11 @@
 package model
 
-import "github.com/timeofmind/data-driven-framework-go/expr"
+import (
+	"fmt"
+	"strings"
+
+	"github.com/timeofmind/data-driven-framework-go/expr"
+)
 
 // The declarative behaviour a schema can attach to classes and relationships
 // (Go-port extensions, v0.2). Every expression is parsed when the schema loads.
@@ -284,4 +289,60 @@ func (c *Class) BelongsToTarget(target string) *Relationship {
 		}
 	}
 	return nil
+}
+
+// OptionRule limits an enum slot's allowed values while When holds.
+type OptionRule struct {
+	When   *expr.Expr
+	Values []string
+}
+
+// Check is a class rule: Expr must hold for a record to be saved. Slot, if
+// set, is the field the message is shown against.
+type Check struct {
+	Expr    *expr.Expr
+	Message string
+	Slot    string
+}
+
+// LinkStep is one belongs_to hop in a path such as set_id.workout_id.sport.
+type LinkStep struct {
+	Rel   *Relationship
+	Class *Class // the class reached
+}
+
+// ResolvePath splits a dotted identifier into belongs_to hops and a final
+// slot of the class reached. A hop may name the FK slot (workout_id), the
+// relationship, or the FK without its _id suffix (workout).
+func ResolvePath(m *Model, c *Class, path string) ([]LinkStep, error) {
+	parts := strings.Split(path, ".")
+	var steps []LinkStep
+	cur := c
+	for i, p := range parts {
+		if i == len(parts)-1 {
+			if !cur.HasSlot(p) && !(p == "id" && cur.PKSlot() != nil) {
+				return nil, fmt.Errorf("%s has no slot %q", cur.Name, p)
+			}
+			return steps, nil
+		}
+		r := cur.BelongsToVia(p)
+		if r == nil {
+			r = cur.BelongsToVia(p + "_id")
+		}
+		if r == nil {
+			if x := cur.Relationship(p); x != nil && x.IsBelongsTo() {
+				r = x
+			}
+		}
+		if r == nil {
+			return nil, fmt.Errorf("%s has no belongs_to link %q", cur.Name, p)
+		}
+		next := m.Class(r.Target)
+		if next == nil {
+			return nil, fmt.Errorf("unknown class %q", r.Target)
+		}
+		steps = append(steps, LinkStep{Rel: r, Class: next})
+		cur = next
+	}
+	return steps, nil
 }

@@ -105,7 +105,20 @@ func buildEnum(name string, def map[string]any) (*model.Enum, error) {
 	for i, v := range raw {
 		values[i] = str(v)
 	}
-	return model.NewEnum(name, values, optStr(def, "default"), str(def["description"]))
+	e, err := model.NewEnum(name, values, optStr(def, "default"), str(def["description"]))
+	if err != nil {
+		return nil, err
+	}
+	if lm := asMap(def["labels"]); len(lm) > 0 {
+		e.Labels = map[string]string{}
+		for k, v := range lm {
+			if !e.HasValue(k) {
+				return nil, fmt.Errorf("enum %q: label for unknown value %q", name, k)
+			}
+			e.Labels[k] = str(v)
+		}
+	}
+	return e, nil
 }
 
 func buildClass(name string, def map[string]any) (*model.Class, error) {
@@ -240,7 +253,12 @@ func buildRelationship(owner, kind string, d map[string]any) (*model.Relationshi
 	if err != nil {
 		return nil, fmt.Errorf("class %q: relationship to %q: %w", owner, target, err)
 	}
+	match, err := assigns("match", d["match"])
+	if err != nil {
+		return nil, fmt.Errorf("class %q: relationship to %q: %w", owner, target, err)
+	}
 	return model.NewRelationship(model.Relationship{
+		Match:       match,
 		Rank:        rank,
 		AddLabel:    str(d["add_label"]),
 		AddWhen:     addWhen,
@@ -273,7 +291,31 @@ func buildSlot(d map[string]any, className string) (*model.Slot, error) {
 			order = n
 		}
 	}
+	when, err := optExpr(d, "when")
+	if err != nil {
+		return nil, fmt.Errorf("class %q: slot %q: %w", className, name, err)
+	}
+	reqWhen, err := optExpr(d, "required_when")
+	if err != nil {
+		return nil, fmt.Errorf("class %q: slot %q: %w", className, name, err)
+	}
+	var options []*model.OptionRule
+	if list, ok := d["options"].([]any); ok {
+		for _, item := range list {
+			od := asMap(item)
+			w, err := parseExpr("options when", od["when"])
+			if err != nil {
+				return nil, fmt.Errorf("class %q: slot %q: %w", className, name, err)
+			}
+			options = append(options, &model.OptionRule{When: w, Values: strList(od["values"])})
+		}
+	} else if _, present := d["options"]; present {
+		return nil, fmt.Errorf("class %q: slot %q: options must be a list of {when, values}", className, name)
+	}
 	return model.NewSlot(model.Slot{
+		When:          when,
+		RequiredWhen:  reqWhen,
+		Options:       options,
 		Name:          name,
 		Type:          str(d["type"]),
 		Enum:          str(d["enum"]),
@@ -413,6 +455,24 @@ func buildBehaviour(c *model.Class, def map[string]any) error {
 	var err error
 	if c.CalendarLabel, err = optExpr(def, "calendar_label"); err != nil {
 		return err
+	}
+	if c.Title, err = optExpr(def, "title"); err != nil {
+		return err
+	}
+	if list, ok := def["checks"].([]any); ok {
+		for _, item := range list {
+			d := asMap(item)
+			ck := &model.Check{Message: str(d["message"]), Slot: str(d["slot"])}
+			if ck.Expr, err = parseExpr("check", d["check"]); err != nil {
+				return err
+			}
+			if ck.Message == "" {
+				return fmt.Errorf("check %q: missing message", ck.Expr)
+			}
+			c.Checks = append(c.Checks, ck)
+		}
+	} else if _, present := def["checks"]; present {
+		return fmt.Errorf("checks must be a list of {check, message, slot}")
 	}
 	if list, ok := def["computed"].([]any); ok {
 		for _, item := range list {

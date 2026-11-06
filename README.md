@@ -159,6 +159,28 @@ For records people share and re-use (a library of workouts, recipes, templates �
 `Handle.FilterConds`, `Handle.RankByUsage`, `Registry.LogUsage` and `Registry.Copy`
 implement these for front ends.
 
+### Rules (v0.5)
+
+Constraints between fields, enforced on every save and used by front ends to offer
+only what fits:
+
+| Where | Attribute | Meaning |
+|---|---|---|
+| enum | `labels: {value: "Text"}` | Display text for values (default: the value with `_` as spaces, capitalised) |
+| class | `title: <expr>` | Record title in links, pickers and headings, e.g. `name + ' (' + low + '–' + high + '%)'`; falls back to `display` |
+| slot | `when: <expr>` | The field applies only while this holds; otherwise its value is cleared on save and it is not shown |
+| slot | `required_when: <expr>` | Required while this holds (and the field applies) |
+| slot (enum) | `options: [{when: <expr>, values: [...]}]` | The first rule whose `when` holds limits the allowed values — e.g. surfaces by sport |
+| belongs_to | `match: {target_slot: <expr>}` | Only target rows whose slot equals the expression may be linked — e.g. `{sport: sport}` for sub-activities of the chosen sport. A null value (nothing chosen yet) adds no limit |
+| class | `checks: [{check: <expr>, message, slot}]` | The record is saved only when every check holds; the message is shown against `slot` (or the form) |
+
+`title`, `when` and `required_when` read the record's own slots only (so they can be
+evaluated in the browser). `options`, `match` and `checks` may also follow belongs_to
+links with dotted paths — `set.workout.sport` or `set_id.workout_id.sport` — loaded
+when the rule runs. `Registry.AllowedValues`, `Registry.MatchConds`, `SlotApplies` and
+`SlotRequired` expose the rules to front ends; `Handle.Save` reports every broken rule
+at once.
+
 `Handle.Import` executes an import block for a parsed `ImportSource`; the file-format
 readers live in the application server (e.g. the Caddy module), not here.
 

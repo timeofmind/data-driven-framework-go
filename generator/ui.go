@@ -162,7 +162,7 @@ func SlotUIField(s *model.Slot) UIField {
 	}
 	if s.Type == "enum" && s.EnumObj != nil {
 		for _, v := range s.EnumObj.Values {
-			f.Options = append(f.Options, UIOption{Value: v, Label: EnumLabel(v)})
+			f.Options = append(f.Options, UIOption{Value: v, Label: s.EnumObj.Label(v)})
 		}
 	}
 	return f

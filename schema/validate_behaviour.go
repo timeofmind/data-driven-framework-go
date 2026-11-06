@@ -88,6 +88,79 @@ func validateBehaviour(c *model.Class, m *model.Model) []string {
 		errs = append(errs, validateImport(c, m, im)...)
 	}
 	errs = append(errs, validateLibrary(c, m)...)
+	errs = append(errs, validateRules(c, m)...)
+	return errs
+}
+
+// validateRules checks title, slot when/required_when/options, belongs_to
+// match and class checks. Rules that run in the browser (title, when,
+// required_when) may read only the record's own slots; the rest may also
+// follow belongs_to links (set_id.workout_id.sport, or set.workout.sport).
+func validateRules(c *model.Class, m *model.Model) []string {
+	var errs []string
+	add := func(where string, problems []string) {
+		for _, p := range problems {
+			errs = append(errs, fmt.Sprintf("Class '%s', %s: %s", c.Name, where, p))
+		}
+	}
+	own := scope{"": c}
+	add("title", checkExpr(c.Title, own))
+	for _, s := range c.Slots {
+		add("slot "+s.Name+" when", checkExpr(s.When, own))
+		add("slot "+s.Name+" required_when", checkExpr(s.RequiredWhen, own))
+		if len(s.Options) > 0 && s.Type != "enum" {
+			add("slot "+s.Name, []string{"options apply to enum slots only"})
+		}
+		for _, o := range s.Options {
+			add("slot "+s.Name+" options", checkPathExpr(o.When, c, m))
+			if len(o.Values) == 0 {
+				add("slot "+s.Name+" options", []string{"each rule needs values"})
+			}
+			if e := m.Enum(s.Enum); e != nil {
+				for _, v := range o.Values {
+					if !e.HasValue(v) {
+						add("slot "+s.Name+" options", []string{fmt.Sprintf("%q is not a value of %s", v, e.Name)})
+					}
+				}
+			}
+		}
+	}
+	for _, r := range c.Relationships {
+		if len(r.Match) == 0 {
+			continue
+		}
+		if !r.IsBelongsTo() {
+			add("relationship "+r.Name, []string{"match applies to belongs_to only"})
+			continue
+		}
+		t := m.Class(r.Target)
+		for _, a := range r.Match {
+			if t != nil && !t.HasSlot(a.Slot) {
+				add("relationship "+r.Name+" match", []string{fmt.Sprintf("%s has no slot %q", r.Target, a.Slot)})
+			}
+			add("relationship "+r.Name+" match", checkPathExpr(a.Expr, c, m))
+		}
+	}
+	for _, ck := range c.Checks {
+		add("check", checkPathExpr(ck.Expr, c, m))
+		if ck.Slot != "" && !c.HasSlot(ck.Slot) {
+			add("check", []string{fmt.Sprintf("slot %q is not defined", ck.Slot)})
+		}
+	}
+	return errs
+}
+
+// checkPathExpr accepts own slots and dotted paths through belongs_to links.
+func checkPathExpr(e *expr.Expr, c *model.Class, m *model.Model) []string {
+	if e == nil {
+		return nil
+	}
+	var errs []string
+	for _, id := range e.Idents() {
+		if _, err := model.ResolvePath(m, c, id); err != nil {
+			errs = append(errs, fmt.Sprintf("expression %q: %v", e, err))
+		}
+	}
 	return errs
 }
 
