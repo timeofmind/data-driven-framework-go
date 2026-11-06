@@ -463,7 +463,7 @@ type Class struct {
 	NoSearch      bool       // search: false — lists offer no free-text search (e.g. filter-only libraries)
 	Title         *expr.Expr // record title in links, pickers and headings; falls back to the display slot
 	OnChange      []*OnChange
-	Checks        []*Check   // rules a record must satisfy to be saved
+	Checks        []*Check // rules a record must satisfy to be saved
 
 	ParentClass   *Class  // set by the resolver
 	ResolvedSlots []*Slot // own + inherited, set by the resolver
