@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"sort"
 	"strings"
@@ -406,6 +407,9 @@ func (r *Registry) fillSequences(ctx context.Context, rec *Record) {
 				stored, _ = h.Load(ctx, rec.ID())
 			}
 		}
+		if rec.keepSeq && rec.Values[s.Name] != nil {
+			continue
+		}
 		if stored != nil && stored.Int(s.Sequence) == rec.Int(s.Sequence) && stored.Values[s.Name] != nil {
 			rec.Values[s.Name] = stored.Values[s.Name]
 			continue
@@ -541,4 +545,65 @@ func (r *Registry) ruleLabel(ctx context.Context, rec *Record, rules []*model.La
 		}
 	}
 	return plain
+}
+
+// SequenceSlot returns the class's sequence slot numbering rows within the
+// parent FK via, or nil.
+func SequenceSlot(c *model.Class, via string) *model.Slot {
+	for _, s := range c.AllSlots() {
+		if s.Sequence == via {
+			return s
+		}
+	}
+	return nil
+}
+
+// InsertAt saves a new record at position pos of its sequence slot s (within
+// its parent): rows of the same parent numbered pos or higher move up one to
+// make room. pos runs from 1 to one past the highest; on any error the rows
+// are moved back.
+func (h *Handle) InsertAt(ctx context.Context, rec *Record, s *model.Slot, pos int64) error {
+	if rec.Persisted() || s.Sequence == "" {
+		return fmt.Errorf("insert: needs a new record and a sequence slot")
+	}
+	parent := rec.Int(s.Sequence)
+	if parent == 0 {
+		return FieldErrors{s.Sequence: "is required"}
+	}
+	next := SequenceNext(h.reg.sequenceTakenFor(ctx, rec, s))
+	if pos < 1 || pos > next {
+		return FieldErrors{s.Name: fmt.Sprintf("must be from 1 to %d", next)}
+	}
+	if err := h.shiftSequence(ctx, s, parent, pos, 1); err != nil {
+		return err
+	}
+	rec.Values[s.Name], rec.keepSeq = pos, true
+	if err := h.Save(ctx, rec); err != nil {
+		rec.Values[s.Name], rec.keepSeq = nil, false
+		if berr := h.shiftSequence(ctx, s, parent, pos+1, -1); berr != nil {
+			return fmt.Errorf("%w (and moving rows back failed: %v)", err, berr)
+		}
+		return err
+	}
+	rec.keepSeq = false
+	return nil
+}
+
+// shiftSequence adds by to every number from from up within one parent. It
+// goes through negative numbers so the parent's unique numbering never
+// clashes mid-update, whatever order the database updates rows in.
+func (h *Handle) shiftSequence(ctx context.Context, s *model.Slot, parent, from, by int64) error {
+	q := h.reg.Dialect.Quote
+	table := q(h.Class.EffectiveTable())
+	if owner := h.reg.Model.Class(s.DefinedIn); owner != nil {
+		table = q(owner.EffectiveTable())
+	}
+	col, fk := q(s.Name), q(s.Sequence)
+	return h.reg.Tx(ctx, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET %s = -(%s + ?) WHERE %s = ? AND %s >= ?", table, col, col, fk, col), by, parent, from); err != nil {
+			return err
+		}
+		_, err := tx.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET %s = -%s WHERE %s = ? AND %s < 0", table, col, col, fk, col), parent)
+		return err
+	})
 }

@@ -22,6 +22,7 @@ type Record struct {
 	Values    map[string]any
 	persisted bool
 	links     map[string]any // values of link paths read by when rules (Registry.LoadLinks)
+	keepSeq   bool           // an InsertAt position: fillSequences leaves it
 }
 
 // NewRecord creates an unsaved record with schema defaults applied, then the

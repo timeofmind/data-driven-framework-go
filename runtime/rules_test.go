@@ -313,3 +313,64 @@ func TestLabelWhen(t *testing.T) {
 		t.Error("label_when expressions are checked")
 	}
 }
+
+func TestInsertAt(t *testing.T) {
+	m := mustLoad(t, rulesSchema)
+	for name, reg := range backends(t, m) {
+		t.Run(name, func(t *testing.T) {
+			beds, plants := reg.MustClass("Bed"), reg.MustClass("Planting")
+			bed := beds.New(map[string]any{"name": "Row", "setting": "outdoor"})
+			if err := beds.Save(ctx, bed); err != nil {
+				t.Fatal(err)
+			}
+			n := m.Class("Planting").Slot("n")
+			add := func(string) *runtime.Record {
+				p := plants.New(map[string]any{"bed_id": bed.ID(), "seeds": int64(1), "row_cm": int64(30)})
+				return p
+			}
+			order := func() string {
+				rows, _ := plants.List(ctx, runtime.Query{Where: []runtime.Cond{runtime.Eq("bed_id", bed.ID())}, OrderBy: "n asc"})
+				var out []string
+				for _, r := range rows {
+					out = append(out, fmt.Sprintf("%d%s", r.Int("n"), r.String("light")))
+				}
+				return strings.Join(out, " ")
+			}
+			for _, l := range []string{"sun", "shade", "sun"} {
+				p := add(l)
+				p.Values["light"] = l
+				if err := plants.Save(ctx, p); err != nil {
+					t.Fatal(err)
+				}
+			}
+			front := add("x")
+			front.Values["light"] = "shade"
+			if err := plants.InsertAt(ctx, front, n, 1); err != nil {
+				t.Fatal(err)
+			}
+			if got := order(); got != "1shade 2sun 3shade 4sun" || front.Int("n") != 1 {
+				t.Errorf("insert at the front: %s", got)
+			}
+			mid := add("y")
+			mid.Values["light"] = "sun"
+			if err := plants.InsertAt(ctx, mid, n, 3); err != nil || order() != "1shade 2sun 3sun 4shade 5sun" {
+				t.Errorf("insert in the middle: %v %s", err, order())
+			}
+			end := add("z")
+			if err := plants.InsertAt(ctx, end, n, 6); err != nil || end.Int("n") != 6 {
+				t.Errorf("insert at the end: %v %d", err, end.Int("n"))
+			}
+			if fe := fieldErrs(t, plants.InsertAt(ctx, add("w"), n, 9)); fe["n"] != "must be from 1 to 7" {
+				t.Errorf("out of range: %v", fe)
+			}
+			bad := plants.New(map[string]any{"bed_id": bed.ID(), "row_cm": int64(30)}) // fails its check: no seeds or plants
+			before := order()
+			if err := plants.InsertAt(ctx, bad, n, 2); err == nil {
+				t.Fatal("expected the save to fail")
+			}
+			if order() != before {
+				t.Errorf("a failed insert must put the numbers back: %s, was %s", order(), before)
+			}
+		})
+	}
+}
