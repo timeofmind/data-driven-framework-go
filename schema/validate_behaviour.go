@@ -105,6 +105,9 @@ func validateRules(c *model.Class, m *model.Model) []string {
 	}
 	own := scope{"": c}
 	add("title", checkPathExpr(c.Title, c, m))
+	for _, lr := range c.LabelWhen {
+		add("label_when", checkPathExpr(lr.When, c, m))
+	}
 	for _, s := range c.Slots {
 		if s.Sequence != "" {
 			if s.Type != "integer" {
@@ -115,6 +118,9 @@ func validateRules(c *model.Class, m *model.Model) []string {
 			}
 		}
 		add("slot "+s.Name+" default_expr", checkPathExpr(s.DefaultExpr, c, m))
+		for _, lr := range s.LabelWhen {
+			add("slot "+s.Name+" label_when", checkPathExpr(lr.When, c, m))
+		}
 		if s.DefaultExpr != nil && s.Default != nil {
 			add("slot "+s.Name, []string{"has both default and default_expr"})
 		}

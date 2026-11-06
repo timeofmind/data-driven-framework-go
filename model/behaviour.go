@@ -388,3 +388,11 @@ func PathSlot(m *Model, c *Class, path string) *Slot {
 	}
 	return cur.Slot(path[strings.LastIndexByte(path, '.')+1:])
 }
+
+// LabelRule gives a class or slot a different label for records where When
+// holds — e.g. "Rep" instead of "Interval" in a resistance workout. The
+// first rule that holds wins; otherwise the plain label is used.
+type LabelRule struct {
+	When  *expr.Expr
+	Label string
+}

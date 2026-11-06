@@ -242,6 +242,9 @@ type Slot struct {
 	// the number after its parent's highest, as does a row moved to another
 	// parent — and unique per parent. Clients cannot set it.
 	Sequence string
+	// LabelWhen: the field's label for records where a rule holds (see
+	// Registry.SlotLabel).
+	LabelWhen []*LabelRule
 	// DefaultExpr: the value a new record starts with, computed from its other
 	// values and its links (e.g. weight for a resistance workout's reps,
 	// distance otherwise). Applied where a static default would be.
@@ -463,7 +466,8 @@ type Class struct {
 	NoSearch      bool       // search: false — lists offer no free-text search (e.g. filter-only libraries)
 	Title         *expr.Expr // record title in links, pickers and headings; falls back to the display slot
 	OnChange      []*OnChange
-	Checks        []*Check // rules a record must satisfy to be saved
+	LabelWhen     []*LabelRule // label for records in context (see Registry.ClassLabel)
+	Checks        []*Check     // rules a record must satisfy to be saved
 
 	ParentClass   *Class  // set by the resolver
 	ResolvedSlots []*Slot // own + inherited, set by the resolver

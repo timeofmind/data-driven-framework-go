@@ -516,3 +516,29 @@ func sortedNames(m map[string][]model.Assign) []string {
 	sort.Strings(out)
 	return out
 }
+
+// ClassLabel is the label for rec: the class's first label_when rule that
+// holds for it (reading its links), else the class label. For a record not
+// yet saved — e.g. a child about to be added under a parent — set its link
+// to the parent first.
+func (r *Registry) ClassLabel(ctx context.Context, rec *Record) string {
+	return r.ruleLabel(ctx, rec, rec.Class.LabelWhen, rec.Class.EffectiveLabel())
+}
+
+// SlotLabel is the label of slot s for rec (its label_when rules, else its label).
+func (r *Registry) SlotLabel(ctx context.Context, rec *Record, s *model.Slot) string {
+	return r.ruleLabel(ctx, rec, s.LabelWhen, s.EffectiveLabel())
+}
+
+func (r *Registry) ruleLabel(ctx context.Context, rec *Record, rules []*model.LabelRule, plain string) string {
+	if len(rules) == 0 || rec == nil {
+		return plain
+	}
+	env := r.pathEnv(ctx, rec)
+	for _, lr := range rules {
+		if v, err := lr.When.Eval(env); err == nil && expr.Truthy(v) {
+			return lr.Label
+		}
+	}
+	return plain
+}

@@ -337,9 +337,14 @@ func buildSlot(d map[string]any, className string) (*model.Slot, error) {
 	if err != nil {
 		return nil, fmt.Errorf("class %q: slot %q: %w", className, name, err)
 	}
+	labelWhen, err := labelRules(d["label_when"])
+	if err != nil {
+		return nil, fmt.Errorf("class %q: slot %q: %w", className, name, err)
+	}
 	readOnly := truthy(d["read_only"]) || seq != "" // a sequence is assigned, never entered
 	return model.NewSlot(model.Slot{
 		Sequence:      seq,
+		LabelWhen:     labelWhen,
 		DefaultExpr:   defExpr,
 		When:          when,
 		RequiredWhen:  reqWhen,
@@ -445,6 +450,23 @@ func sortedKeys[V any](m map[string]V) []string {
 	return keys
 }
 
+// labelRules parses label_when: [{when, label}].
+func labelRules(v any) ([]*model.LabelRule, error) {
+	var out []*model.LabelRule
+	for _, item := range asList(v) {
+		d := asMap(item)
+		w, err := parseExpr("label_when", d["when"])
+		if err != nil {
+			return nil, err
+		}
+		if str(d["label"]) == "" {
+			return nil, fmt.Errorf("label_when %q: missing label", w)
+		}
+		out = append(out, &model.LabelRule{When: w, Label: str(d["label"])})
+	}
+	return out, nil
+}
+
 func optExpr(d map[string]any, key string) (*expr.Expr, error) {
 	v, ok := d[key]
 	if !ok || v == nil {
@@ -485,6 +507,9 @@ func buildBehaviour(c *model.Class, def map[string]any) error {
 		return err
 	}
 	if c.Title, err = optExpr(def, "title"); err != nil {
+		return err
+	}
+	if c.LabelWhen, err = labelRules(def["label_when"]); err != nil {
 		return err
 	}
 	if list, ok := def["checks"].([]any); ok {

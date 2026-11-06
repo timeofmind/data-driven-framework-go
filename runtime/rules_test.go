@@ -286,3 +286,30 @@ func TestWhenThroughLinks(t *testing.T) {
 		t.Error("loaded links: light does not apply outdoors")
 	}
 }
+
+// TestLabelWhen: class and slot labels that depend on the record, through
+// its links (a planting is a "Cutting" in an indoor bed).
+func TestLabelWhen(t *testing.T) {
+	m := mustLoad(t, strings.Replace(strings.Replace(rulesSchema,
+		"  Planting:\n", "  Planting:\n    label: Planting\n    label_when: [{when: \"bed.setting == 'indoor'\", label: Cutting}]\n", 1),
+		"      - {name: seeds, type: integer}", "      - {name: seeds, type: integer, label_when: [{when: \"bed.setting == 'indoor'\", label: Cuttings}]}", 1))
+	reg := backends(t, m)["sqlite"]
+	beds, plants := reg.MustClass("Bed"), reg.MustClass("Planting")
+	in, out := beds.New(map[string]any{"name": "In", "setting": "indoor"}), beds.New(map[string]any{"name": "Out", "setting": "outdoor"})
+	beds.Save(ctx, in)
+	beds.Save(ctx, out)
+	seeds := m.Class("Planting").Slot("seeds")
+	pin, pout := plants.New(map[string]any{"bed_id": in.ID()}), plants.New(map[string]any{"bed_id": out.ID()})
+	if got := reg.ClassLabel(ctx, pin); got != "Cutting" {
+		t.Errorf("indoor class label: %q", got)
+	}
+	if got := reg.ClassLabel(ctx, pout); got != "Planting" {
+		t.Errorf("outdoor class label: %q", got)
+	}
+	if reg.SlotLabel(ctx, pin, seeds) != "Cuttings" || reg.SlotLabel(ctx, pout, seeds) != "Seeds" {
+		t.Errorf("slot labels: %q %q", reg.SlotLabel(ctx, pin, seeds), reg.SlotLabel(ctx, pout, seeds))
+	}
+	if _, err := schema.Load(schema.String(strings.Replace(rulesSchema, "  Planting:\n", "  Planting:\n    label_when: [{when: \"bed.colour == 1\", label: X}]\n", 1))); err == nil {
+		t.Error("label_when expressions are checked")
+	}
+}
