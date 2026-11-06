@@ -259,19 +259,25 @@ func (r *Registry) Copy(ctx context.Context, p *Principal, src *Record, act *mod
 	if err := h.Save(ctx, dst); err != nil {
 		return nil, err
 	}
-	cc := copyCtx{p: p, root: src, act: act, check: check}
+	cc := copyCtx{p: p, root: src, act: act, check: check, linked: map[string]int64{}}
 	if err := r.copyChildren(ctx, cc, src, dst, pathTree(act.Copy), ""); err != nil {
 		_ = h.Delete(ctx, dst.ID())
+		for key, id := range cc.linked { // and the linked records copied so far
+			if lh, herr := r.Class(key[:strings.IndexByte(key, ':')]); herr == nil {
+				_ = lh.Delete(ctx, id)
+			}
+		}
 		return nil, err
 	}
 	return dst, nil
 }
 
 type copyCtx struct {
-	p     *Principal
-	root  *Record
-	act   *model.Action
-	check func(*Record) error
+	p      *Principal
+	root   *Record
+	act    *model.Action
+	check  func(*Record) error
+	linked map[string]int64 // "Class:id" → id of its copy (copy_links)
 }
 
 type paths map[string]paths
@@ -323,6 +329,9 @@ func (r *Registry) copyChildren(ctx context.Context, cc copyCtx, src, dst *Recor
 					c.Values[as.Slot] = exprToSlot(ch.Class.Slot(as.Slot), v)
 				}
 			}
+			if err := r.copyLinked(ctx, cc, c, path); err != nil {
+				return err
+			}
 			if cc.check != nil {
 				if err := cc.check(c); err != nil {
 					return err
@@ -362,4 +371,50 @@ func ActionAllowed(act *model.Action, rec *Record) bool {
 	}
 	v, err := act.When.Eval(envOf(layer{rec: rec}, layer{prefix: "source", rec: rec}))
 	return err == nil && expr.Truthy(v)
+}
+
+// copyLinked copies the records c links to that the action's copy_links name
+// for this path, once each, and points c at the copies.
+func (r *Registry) copyLinked(ctx context.Context, cc copyCtx, c *Record, path string) error {
+	for _, fk := range sortedKeysOf(cc.act.CopyLinks) {
+		if !strings.HasPrefix(fk, path+".") || strings.Contains(fk[len(path)+1:], ".") {
+			continue
+		}
+		slot := fk[len(path)+1:]
+		id := c.Int(slot)
+		rel := c.Class.BelongsToVia(slot)
+		if id == 0 || rel == nil {
+			continue
+		}
+		key := fmt.Sprintf("%s:%d", rel.Target, id)
+		if done, ok := cc.linked[key]; ok {
+			c.Values[slot] = done
+			continue
+		}
+		th, err := r.Class(rel.Target)
+		if err != nil {
+			return err
+		}
+		target, err := th.Load(ctx, id)
+		if err != nil {
+			c.Values[slot] = nil // gone: nothing to copy
+			continue
+		}
+		cp, err := r.Copy(ctx, cc.p, target, th.Class.ActionByName(cc.act.CopyLinks[fk]), cc.check)
+		if err != nil {
+			return fmt.Errorf("copy %s %d: %w", rel.Target, id, err)
+		}
+		cc.linked[key] = cp.ID()
+		c.Values[slot] = cp.ID()
+	}
+	return nil
+}
+
+func sortedKeysOf(m map[string]string) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }

@@ -257,6 +257,26 @@ func validateLibrary(c *model.Class, m *model.Model) []string {
 				add(where, "%s", p)
 			}
 		}
+		for key, actName := range a.CopyLinks {
+			i := strings.LastIndexByte(key, '.')
+			if i < 0 {
+				add(where, "copy_links %q must be path.fk_slot", key)
+				continue
+			}
+			child := pathClass[key[:i]]
+			if child == nil {
+				add(where, "copy_links %q: %q is not one of the copy paths", key, key[:i])
+				continue
+			}
+			rel := child.BelongsToVia(key[i+1:])
+			if rel == nil {
+				add(where, "copy_links %q: %q is not a belongs_to FK of %s", key, key[i+1:], child.Name)
+				continue
+			}
+			if t := m.Class(rel.Target); t == nil || t.ActionByName(actName) == nil {
+				add(where, "copy_links %q: %s has no action %q", key, rel.Target, actName)
+			}
+		}
 		for path, list := range a.SetChildren {
 			child := pathClass[path]
 			if child == nil {

@@ -166,6 +166,13 @@ type Action struct {
 	// the path, e.g. workouts). Expressions read the child being copied as
 	// source.* and the record the action runs on as root.*.
 	SetChildren map[string][]Assign
+	// CopyLinks copies records that copied children link to, with the linked
+	// class's own action, and points the child at the copy: keyed by
+	// "path.fk_slot" (e.g. workouts.workout_id), valued by the action name.
+	// A record linked from several children is copied once. The linked
+	// action's when-condition is not applied: running this action is what
+	// shares the linked records.
+	CopyLinks map[string]string
 }
 
 // OnChange runs when a saved record's Slot changes: Set updates the record

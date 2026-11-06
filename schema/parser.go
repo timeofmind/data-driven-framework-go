@@ -615,6 +615,12 @@ func buildBehaviour(c *model.Class, def map[string]any) error {
 		if a.When, err = optExpr(d, "when"); err != nil {
 			return fmt.Errorf("action %s: %w", a.Name, err)
 		}
+		if cl := asMap(d["copy_links"]); len(cl) > 0 {
+			a.CopyLinks = map[string]string{}
+			for k, v := range cl {
+				a.CopyLinks[k] = str(v)
+			}
+		}
 		if sc := asMap(d["set_children"]); len(sc) > 0 {
 			a.SetChildren = map[string][]model.Assign{}
 			for _, path := range sortedKeys(sc) {
