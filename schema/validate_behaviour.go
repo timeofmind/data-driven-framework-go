@@ -232,15 +232,20 @@ func validateLibrary(c *model.Class, m *model.Model) []string {
 		if len(a.Copy) == 0 && len(a.Set) == 0 {
 			add(where, "nothing to do: give copy and/or set")
 		}
+		pathClass := map[string]*model.Class{}
 		for _, path := range a.Copy {
 			cur := c
 			for _, seg := range strings.Split(path, ".") {
 				rel := cur.RelationshipByName(seg)
 				if rel == nil || !rel.IsHasMany() || m.Class(rel.Target) == nil {
 					add(where, "copy path %q: %q is not a has_many of %s", path, seg, cur.Name)
+					cur = nil
 					break
 				}
 				cur = m.Class(rel.Target)
+			}
+			if cur != nil {
+				pathClass[path] = cur
 			}
 		}
 		sc := scope{"": c, "source": c}
@@ -252,8 +257,54 @@ func validateLibrary(c *model.Class, m *model.Model) []string {
 				add(where, "%s", p)
 			}
 		}
+		for path, list := range a.SetChildren {
+			child := pathClass[path]
+			if child == nil {
+				add(where, "set_children %q is not one of the copy paths", path)
+				continue
+			}
+			for _, as := range list {
+				if !child.HasSlot(as.Slot) {
+					add(where, "%s has no slot %q to set", child.Name, as.Slot)
+				}
+				for _, p := range checkExpr(as.Expr, scope{"source": child, "root": c}) {
+					add(where, "%s", p)
+				}
+			}
+		}
 		for _, p := range checkExpr(a.When, sc) {
 			add(where, "%s", p)
+		}
+	}
+	for _, oc := range c.OnChange {
+		where := "on_change " + oc.Slot
+		if !c.HasSlot(oc.Slot) {
+			add(where, "%s has no slot %q", c.Name, oc.Slot)
+		}
+		own := scope{"": c, "self": c, "old": c}
+		for _, as := range oc.Set {
+			if !c.HasSlot(as.Slot) {
+				add(where, "%s has no slot %q to set", c.Name, as.Slot)
+			}
+			for _, p := range checkExpr(as.Expr, own) {
+				add(where, "%s", p)
+			}
+		}
+		for name, list := range oc.Children {
+			rel := c.RelationshipByName(name)
+			if rel == nil || !rel.IsHasMany() || m.Class(rel.Target) == nil {
+				add(where, "%q is not a has_many of %s", name, c.Name)
+				continue
+			}
+			child := m.Class(rel.Target)
+			for _, as := range list {
+				if !child.HasSlot(as.Slot) {
+					add(where, "%s has no slot %q to set", child.Name, as.Slot)
+				}
+				for _, p := range checkExpr(as.Expr, scope{"": c, "self": c, "old": c, "child": child}) {
+					add(where, "%s", p)
+				}
+			}
 		}
 	}
 	if u := c.Usage; u != nil {

@@ -5,6 +5,7 @@
 //	if(self.distance_km < 0.8 * target.target_distance_km, 'partial', 'completed')
 //	item.start_date <= self.date and (item.end_date == null or item.end_date >= self.date)
 //	title + ' · ' + round(distance_km, 1) + ' km'
+//	add_days(source.date, days_between(root.start_date, input.start_date))
 //
 // Values are nil, float64, string or bool. Identifiers may be dotted
 // (self.date, item.sport); the caller's Env resolves them. Arithmetic on null
@@ -19,6 +20,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 )
 
@@ -317,6 +319,7 @@ type call struct {
 var arity = map[string][2]int{
 	"coalesce": {1, -1}, "if": {3, 3}, "round": {1, 2}, "duration": {1, 1},
 	"lower": {1, 1}, "upper": {1, 1}, "min": {2, -1}, "max": {2, -1}, "abs": {1, 1},
+	"add_days": {2, 2}, "days_between": {2, 2},
 }
 
 func (n call) eval(env Env) (any, error) {
@@ -381,6 +384,20 @@ func (n call) eval(env Env) (any, error) {
 			return nil, nil
 		}
 		return math.Abs(f), nil
+	case "add_days":
+		d, ok := toDate(args[0])
+		n, nok := args[1].(float64)
+		if !ok || !nok {
+			return nil, nil
+		}
+		return d.AddDate(0, 0, int(math.Round(n))).Format(dateLayout), nil
+	case "days_between":
+		a, aok := toDate(args[0])
+		b, bok := toDate(args[1])
+		if !aok || !bok {
+			return nil, nil
+		}
+		return math.Round(b.Sub(a).Hours() / 24), nil
 	case "min", "max":
 		var best any
 		for _, a := range args {
@@ -684,4 +701,17 @@ func (p *parser) parsePrimary() (node, error) {
 		return nil, fmt.Errorf("expr %q: unexpected end", p.src)
 	}
 	return nil, fmt.Errorf("expr %q: unexpected %q", p.src, t.s)
+}
+
+const dateLayout = "2006-01-02"
+
+// toDate reads a date value: a string starting YYYY-MM-DD (a datetime's
+// time of day is ignored).
+func toDate(v any) (time.Time, bool) {
+	s, ok := v.(string)
+	if !ok || len(s) < 10 {
+		return time.Time{}, false
+	}
+	t, err := time.Parse(dateLayout, s[:10])
+	return t, err == nil
 }

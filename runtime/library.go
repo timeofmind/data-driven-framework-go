@@ -233,9 +233,10 @@ func (r *Registry) LogUsage(ctx context.Context, p *Principal, used *model.Class
 
 // Copy runs a copy action on src for p: a new record owned by p with src's
 // values and the action's set applied (source.* is src), then the action's
-// has_many paths copied beneath it. check, when given, vets every record
-// before it is saved (e.g. that its links are allowed); on any failure the
-// partial copy is deleted.
+// has_many paths copied beneath it with set_children applied (source.* the
+// child copied, root.* src).
+// check, when given, vets every record before it is saved (e.g. that its
+// links are allowed); on any failure the partial copy is deleted.
 func (r *Registry) Copy(ctx context.Context, p *Principal, src *Record, act *model.Action, check func(*Record) error) (*Record, error) {
 	h, err := r.Class(src.Class.Name)
 	if err != nil {
@@ -258,11 +259,19 @@ func (r *Registry) Copy(ctx context.Context, p *Principal, src *Record, act *mod
 	if err := h.Save(ctx, dst); err != nil {
 		return nil, err
 	}
-	if err := r.copyChildren(ctx, p, src, dst, pathTree(act.Copy), check); err != nil {
+	cc := copyCtx{p: p, root: src, act: act, check: check}
+	if err := r.copyChildren(ctx, cc, src, dst, pathTree(act.Copy), ""); err != nil {
 		_ = h.Delete(ctx, dst.ID())
 		return nil, err
 	}
 	return dst, nil
+}
+
+type copyCtx struct {
+	p     *Principal
+	root  *Record
+	act   *model.Action
+	check func(*Record) error
 }
 
 type paths map[string]paths
@@ -281,7 +290,7 @@ func pathTree(list []string) paths {
 	return t
 }
 
-func (r *Registry) copyChildren(ctx context.Context, p *Principal, src, dst *Record, tree paths, check func(*Record) error) error {
+func (r *Registry) copyChildren(ctx context.Context, cc copyCtx, src, dst *Record, tree paths, prefix string) error {
 	names := make([]string, 0, len(tree))
 	for n := range tree {
 		names = append(names, n)
@@ -297,18 +306,32 @@ func (r *Registry) copyChildren(ctx context.Context, p *Principal, src, dst *Rec
 		if err != nil {
 			return err
 		}
+		path := name
+		if prefix != "" {
+			path = prefix + "." + name
+		}
 		for _, kid := range kids {
-			c := copyValues(ch, kid, p)
+			c := copyValues(ch, kid, cc.p)
 			c.Values[rel.Via] = dst.ID()
-			if check != nil {
-				if err := check(c); err != nil {
+			if sets := cc.act.SetChildren[path]; len(sets) > 0 {
+				env := envOf(layer{prefix: "source", rec: kid}, layer{prefix: "root", rec: cc.root})
+				for _, as := range sets {
+					v, err := as.Expr.Eval(env)
+					if err != nil {
+						return fmt.Errorf("action %s: %s.%s: %w", cc.act.Name, path, as.Slot, err)
+					}
+					c.Values[as.Slot] = exprToSlot(ch.Class.Slot(as.Slot), v)
+				}
+			}
+			if cc.check != nil {
+				if err := cc.check(c); err != nil {
 					return err
 				}
 			}
 			if err := ch.Save(ctx, c); err != nil {
 				return err
 			}
-			if err := r.copyChildren(ctx, p, kid, c, tree[name], check); err != nil {
+			if err := r.copyChildren(ctx, cc, kid, c, tree[name], path); err != nil {
 				return err
 			}
 		}

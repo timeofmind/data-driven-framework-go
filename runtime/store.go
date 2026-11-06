@@ -354,6 +354,10 @@ func (h *Handle) Save(ctx context.Context, rec *Record) error {
 		return fmt.Errorf("save: record is a %s, handle is %s", rec.Class.Name, h.Class.Name)
 	}
 	h.reg.ApplyDefaults(ctx, rec)
+	changes, stored, err := h.onChangeSelf(ctx, rec)
+	if err != nil {
+		return err
+	}
 	h.reg.LoadLinks(ctx, rec)
 	clearInapplicable(rec)
 	h.reg.fillSequences(ctx, rec)
@@ -399,6 +403,9 @@ func (h *Handle) Save(ctx context.Context, rec *Record) error {
 		return err
 	}
 	rec.Values, rec.persisted = fresh.Values, true
+	if err := h.onChangeChildren(ctx, rec, stored, changes); err != nil {
+		return err
+	}
 	return h.reg.runTriggers(ctx, rec)
 }
 

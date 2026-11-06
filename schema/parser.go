@@ -615,7 +615,31 @@ func buildBehaviour(c *model.Class, def map[string]any) error {
 		if a.When, err = optExpr(d, "when"); err != nil {
 			return fmt.Errorf("action %s: %w", a.Name, err)
 		}
+		if sc := asMap(d["set_children"]); len(sc) > 0 {
+			a.SetChildren = map[string][]model.Assign{}
+			for _, path := range sortedKeys(sc) {
+				if a.SetChildren[path], err = assigns("action "+a.Name+" set_children "+path, sc[path]); err != nil {
+					return err
+				}
+			}
+		}
 		c.Actions = append(c.Actions, a)
+	}
+	for _, item := range asList(def["on_change"]) {
+		d := asMap(item)
+		oc := &model.OnChange{Slot: str(d["slot"])}
+		if oc.Set, err = assigns("on_change "+oc.Slot+" set", d["set"]); err != nil {
+			return err
+		}
+		if ch := asMap(d["children"]); len(ch) > 0 {
+			oc.Children = map[string][]model.Assign{}
+			for _, rel := range sortedKeys(ch) {
+				if oc.Children[rel], err = assigns("on_change "+oc.Slot+" children "+rel, ch[rel]); err != nil {
+					return err
+				}
+			}
+		}
+		c.OnChange = append(c.OnChange, oc)
 	}
 	if d := asMap(def["usage"]); len(d) > 0 {
 		u := &model.Usage{Log: str(d["log"]), Via: str(d["via"]), Kind: str(d["kind"]), Filter: str(d["filter"]), Values: str(d["values"])}

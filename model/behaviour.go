@@ -162,6 +162,26 @@ type Action struct {
 	Copy  []string
 	Set   []Assign
 	When  *expr.Expr
+	// SetChildren applies to each record copied along a copy path (keyed by
+	// the path, e.g. workouts). Expressions read the child being copied as
+	// source.* and the record the action runs on as root.*.
+	SetChildren map[string][]Assign
+}
+
+// OnChange runs when a saved record's Slot changes: Set updates the record
+// itself, Children updates every row of each named has_many. Expressions read
+// the new values bare (or as self.*), the stored values as old.*, and — for
+// children — the child as child.*.
+//
+//	on_change:
+//	  - slot: start_date
+//	    set: {end_date: "add_days(old.end_date, days_between(old.start_date, start_date))"}
+//	    children:
+//	      workouts: {date: "add_days(child.date, days_between(old.start_date, start_date))"}
+type OnChange struct {
+	Slot     string
+	Set      []Assign
+	Children map[string][]Assign
 }
 
 // Usage records each time someone uses a record of this class — links a new

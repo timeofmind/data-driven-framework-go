@@ -447,3 +447,72 @@ func (r *Registry) ApplyDefaults(ctx context.Context, rec *Record) {
 		}
 	}
 }
+
+// onChangeSelf finds the class's on_change rules whose slot rec changes and
+// applies their own-record set; it returns them and the stored record for
+// onChangeChildren.
+func (h *Handle) onChangeSelf(ctx context.Context, rec *Record) ([]*model.OnChange, *Record, error) {
+	if len(h.Class.OnChange) == 0 || !rec.Persisted() {
+		return nil, nil, nil
+	}
+	stored, err := h.Load(ctx, rec.ID())
+	if err != nil {
+		return nil, nil, nil
+	}
+	var changed []*model.OnChange
+	for _, oc := range h.Class.OnChange {
+		if fmt.Sprint(expr.Normalize(stored.Values[oc.Slot])) == fmt.Sprint(expr.Normalize(rec.Values[oc.Slot])) {
+			continue
+		}
+		changed = append(changed, oc)
+		env := envOf(layer{rec: rec}, layer{prefix: "self", rec: rec}, layer{prefix: "old", rec: stored})
+		for _, as := range oc.Set {
+			v, err := as.Expr.Eval(env)
+			if err != nil {
+				return nil, nil, fmt.Errorf("on_change %s: %s: %w", oc.Slot, as.Slot, err)
+			}
+			rec.Values[as.Slot] = exprToSlot(h.Class.Slot(as.Slot), v)
+		}
+	}
+	return changed, stored, nil
+}
+
+// onChangeChildren updates the children of the changed rules once rec is saved.
+func (h *Handle) onChangeChildren(ctx context.Context, rec, stored *Record, changed []*model.OnChange) error {
+	for _, oc := range changed {
+		for _, name := range sortedNames(oc.Children) {
+			rel := h.Class.RelationshipByName(name)
+			ch, err := h.reg.Class(rel.Target)
+			if err != nil {
+				return err
+			}
+			kids, err := h.Children(ctx, rec, name, Query{})
+			if err != nil {
+				return err
+			}
+			for _, kid := range kids {
+				env := envOf(layer{rec: rec}, layer{prefix: "self", rec: rec}, layer{prefix: "old", rec: stored}, layer{prefix: "child", rec: kid})
+				for _, as := range oc.Children[name] {
+					v, err := as.Expr.Eval(env)
+					if err != nil {
+						return fmt.Errorf("on_change %s: %s.%s: %w", oc.Slot, name, as.Slot, err)
+					}
+					kid.Values[as.Slot] = exprToSlot(ch.Class.Slot(as.Slot), v)
+				}
+				if err := ch.Save(ctx, kid); err != nil {
+					return fmt.Errorf("on_change %s: %s %d: %w", oc.Slot, name, kid.ID(), err)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func sortedNames(m map[string][]model.Assign) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
