@@ -354,6 +354,7 @@ func (h *Handle) Save(ctx context.Context, rec *Record) error {
 		return fmt.Errorf("save: record is a %s, handle is %s", rec.Class.Name, h.Class.Name)
 	}
 	clearInapplicable(rec)
+	h.reg.fillSequences(ctx, rec)
 	errs := rec.Validate()
 	for k, v := range h.reg.CheckRules(ctx, rec) {
 		if errs == nil {

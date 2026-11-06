@@ -229,3 +229,92 @@ func Matches(target *Record, conds []Cond) bool {
 	}
 	return true
 }
+
+// SequenceTaken returns, for each parent id, the numbers sequence slot s
+// already uses among that parent's rows (ascending), leaving out row exclude.
+func (r *Registry) SequenceTaken(ctx context.Context, c *model.Class, s *model.Slot, parents []int64, exclude int64) (map[int64][]int64, error) {
+	out := map[int64][]int64{}
+	if s.Sequence == "" || len(parents) == 0 {
+		return out, nil
+	}
+	h, err := r.Class(c.Name)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]any, len(parents))
+	for i, p := range parents {
+		ids[i] = p
+		out[p] = []int64{}
+	}
+	rows, err := h.List(ctx, Query{Where: []Cond{{Field: s.Sequence, Op: "in", Value: ids}}, OrderBy: s.Name + " asc"})
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		if row.ID() == exclude || row.Values[s.Name] == nil {
+			continue
+		}
+		p := row.Int(s.Sequence)
+		out[p] = append(out[p], row.Int(s.Name))
+	}
+	return out, nil
+}
+
+// SequenceNext is the number after the highest taken (1 when none is).
+func SequenceNext(taken []int64) int64 {
+	var hi int64
+	for _, t := range taken {
+		if t > hi {
+			hi = t
+		}
+	}
+	return hi + 1
+}
+
+// sequenceTakenFor is SequenceTaken for rec's own parent.
+func (r *Registry) sequenceTakenFor(ctx context.Context, rec *Record, s *model.Slot) []int64 {
+	p := rec.Int(s.Sequence)
+	if p == 0 {
+		return nil
+	}
+	exclude := int64(0)
+	if rec.Persisted() {
+		exclude = rec.ID()
+	}
+	taken, err := r.SequenceTaken(ctx, rec.Class, s, []int64{p}, exclude)
+	if err != nil {
+		return nil
+	}
+	return taken[p]
+}
+
+// fillSequences numbers sequence slots: a new row, or one moved to another
+// parent, gets the number after that parent's highest; otherwise a row keeps
+// the number it was stored with.
+func (r *Registry) fillSequences(ctx context.Context, rec *Record) {
+	var stored *Record
+	for _, s := range rec.Class.AllSlots() {
+		if s.Sequence == "" || rec.Int(s.Sequence) == 0 {
+			continue
+		}
+		if rec.Persisted() && stored == nil {
+			if h, err := r.Class(rec.Class.Name); err == nil {
+				stored, _ = h.Load(ctx, rec.ID())
+			}
+		}
+		if stored != nil && stored.Int(s.Sequence) == rec.Int(s.Sequence) && stored.Values[s.Name] != nil {
+			rec.Values[s.Name] = stored.Values[s.Name]
+			continue
+		}
+		rec.Values[s.Name] = SequenceNext(r.sequenceTakenFor(ctx, rec, s))
+	}
+}
+
+func contains64(list []int64, v int64) bool {
+	for _, x := range list {
+		if x == v {
+			return true
+		}
+	}
+	return false
+}

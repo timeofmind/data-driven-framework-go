@@ -106,6 +106,14 @@ func validateRules(c *model.Class, m *model.Model) []string {
 	own := scope{"": c}
 	add("title", checkExpr(c.Title, own))
 	for _, s := range c.Slots {
+		if s.Sequence != "" {
+			if s.Type != "integer" {
+				add("slot "+s.Name+" sequence", []string{"applies to integer slots only"})
+			}
+			if c.BelongsToVia(s.Sequence) == nil {
+				add("slot "+s.Name+" sequence", []string{fmt.Sprintf("within %q is not a belongs_to FK", s.Sequence)})
+			}
+		}
 		add("slot "+s.Name+" when", checkExpr(s.When, own))
 		add("slot "+s.Name+" required_when", checkExpr(s.RequiredWhen, own))
 		if len(s.Options) > 0 && s.Type != "enum" {

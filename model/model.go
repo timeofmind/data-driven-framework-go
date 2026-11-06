@@ -237,6 +237,11 @@ type Slot struct {
 	When         *expr.Expr
 	RequiredWhen *expr.Expr
 	Options      []*OptionRule
+	// Sequence: an integer numbering rows within a parent (the FK slot named
+	// here), e.g. set # within a workout. Assigned on save — each new row gets
+	// the number after its parent's highest, as does a row moved to another
+	// parent — and unique per parent. Clients cannot set it.
+	Sequence string
 
 	EnumObj   *Enum  // set by the resolver
 	DefinedIn string // class the slot was declared in

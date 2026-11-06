@@ -170,6 +170,7 @@ only what fits:
 | class | `title: <expr>` | Record title in links, pickers and headings, e.g. `name + ' (' + low + '–' + high + '%)'`; falls back to `display` |
 | slot | `when: <expr>` | The field applies only while this holds; otherwise its value is cleared on save and it is not shown |
 | slot | `required_when: <expr>` | Required while this holds (and the field applies) |
+| slot (integer) | `sequence: {within: parent_fk}` | Numbers rows within their parent — e.g. set # within a workout. Assigned on save: a new row, or one moved to another parent, gets the number after that parent's highest; otherwise a row keeps its number. Unique per parent (a unique constraint is added) and never entered by hand (the slot is read-only) |
 | slot (enum) | `options: [{when: <expr>, values: [...]}]` | The first rule whose `when` holds limits the allowed values — e.g. surfaces by sport |
 | belongs_to | `match: {target_slot: <expr>}` | Only target rows whose slot equals the expression may be linked — e.g. `{sport: sport}` for sub-activities of the chosen sport. A null value (nothing chosen yet) adds no limit |
 | class | `checks: [{check: <expr>, message, slot, client}]` | The record is saved only when every check holds; the message is shown against `slot` (or the form). `client: true` (own slots only) also runs it in the browser |
