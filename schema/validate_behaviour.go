@@ -93,9 +93,9 @@ func validateBehaviour(c *model.Class, m *model.Model) []string {
 }
 
 // validateRules checks title, slot when/required_when/options, belongs_to
-// match and class checks. Rules that run in the browser (title, when,
-// required_when) may read only the record's own slots; the rest may also
-// follow belongs_to links (set_id.workout_id.sport, or set.workout.sport).
+// match and class checks. title may read only the record's own slots; the
+// rest may also follow belongs_to links (set_id.workout_id.sport, or
+// set.workout.sport) — the browser is given those values with each form.
 func validateRules(c *model.Class, m *model.Model) []string {
 	var errs []string
 	add := func(where string, problems []string) {
@@ -114,8 +114,12 @@ func validateRules(c *model.Class, m *model.Model) []string {
 				add("slot "+s.Name+" sequence", []string{fmt.Sprintf("within %q is not a belongs_to FK", s.Sequence)})
 			}
 		}
-		add("slot "+s.Name+" when", checkExpr(s.When, own))
-		add("slot "+s.Name+" required_when", checkExpr(s.RequiredWhen, own))
+		add("slot "+s.Name+" default_expr", checkPathExpr(s.DefaultExpr, c, m))
+		if s.DefaultExpr != nil && s.Default != nil {
+			add("slot "+s.Name, []string{"has both default and default_expr"})
+		}
+		add("slot "+s.Name+" when", checkPathExpr(s.When, c, m))
+		add("slot "+s.Name+" required_when", checkPathExpr(s.RequiredWhen, c, m))
 		if len(s.Options) > 0 && s.Type != "enum" {
 			add("slot "+s.Name, []string{"options apply to enum slots only"})
 		}

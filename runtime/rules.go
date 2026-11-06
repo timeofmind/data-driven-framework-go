@@ -13,16 +13,53 @@ import (
 // options, belongs_to match and class checks. Save enforces all of them; the
 // helpers here also let front ends show only what applies.
 
-// ownEnv evaluates against the record's own slots.
-func ownEnv(rec *Record) expr.Env { return envOf(layer{rec: rec}) }
+// ownEnv evaluates against the record's own slots, plus the link paths
+// LoadLinks has filled in.
+func ownEnv(rec *Record) expr.Env {
+	own := envOf(layer{rec: rec})
+	return func(name string) (any, bool) {
+		if strings.Contains(name, ".") {
+			v, ok := rec.links[name]
+			return v, ok
+		}
+		return own(name)
+	}
+}
 
-// SlotApplies reports whether a slot's when-condition holds for rec.
+// LoadLinks fetches the linked values (set.workout.sport) the class's when
+// and required_when rules read, so SlotApplies and SlotRequired can use them.
+// Save calls it; front ends call it before deciding which fields to show.
+func (r *Registry) LoadLinks(ctx context.Context, rec *Record) {
+	rec.links = map[string]any{}
+	for _, s := range rec.Class.AllSlots() {
+		for _, e := range []*expr.Expr{s.When, s.RequiredWhen} {
+			if e == nil {
+				continue
+			}
+			for _, id := range e.Idents() {
+				if _, done := rec.links[id]; done || !strings.Contains(id, ".") {
+					continue
+				}
+				if v, err := r.pathValue(ctx, rec, id); err == nil {
+					rec.links[id] = v
+				}
+			}
+		}
+	}
+}
+
+// SlotApplies reports whether a slot's when-condition holds for rec. A rule
+// reading links that were not loaded counts as holding, so nothing is hidden
+// or cleared on a guess.
 func SlotApplies(rec *Record, s *model.Slot) bool {
 	if s.When == nil {
 		return true
 	}
 	v, err := s.When.Eval(ownEnv(rec))
-	return err == nil && expr.Truthy(v)
+	if err != nil {
+		return true
+	}
+	return expr.Truthy(v)
 }
 
 // SlotRequired reports whether s must have a value on rec.
@@ -317,4 +354,29 @@ func contains64(list []int64, v int64) bool {
 		}
 	}
 	return false
+}
+
+// ApplyDefaults gives a new record's empty slots their default_expr values
+// (reading its links, e.g. set.workout.sport). Front ends call it when
+// showing a new record's form; Save calls it for records it inserts.
+func (r *Registry) ApplyDefaults(ctx context.Context, rec *Record) {
+	if rec.Persisted() {
+		return
+	}
+	var env expr.Env
+	for _, s := range rec.Class.AllSlots() {
+		if s.DefaultExpr == nil || (rec.Values[s.Name] != nil && rec.Values[s.Name] != "") {
+			continue
+		}
+		if env == nil {
+			env = r.pathEnv(ctx, rec)
+		}
+		v, err := s.DefaultExpr.Eval(env)
+		if err != nil || v == nil {
+			continue
+		}
+		if cv, err := Coerce(s, exprToSlot(s, v)); err == nil {
+			rec.Values[s.Name] = cv
+		}
+	}
 }

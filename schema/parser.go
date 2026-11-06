@@ -329,9 +329,14 @@ func buildSlot(d map[string]any, className string) (*model.Slot, error) {
 	if _, present := d["sequence"]; present && seq == "" {
 		return nil, fmt.Errorf("class %q: slot %q: sequence needs within: <parent FK slot>", className, name)
 	}
+	defExpr, err := optExpr(d, "default_expr")
+	if err != nil {
+		return nil, fmt.Errorf("class %q: slot %q: %w", className, name, err)
+	}
 	readOnly := truthy(d["read_only"]) || seq != "" // a sequence is assigned, never entered
 	return model.NewSlot(model.Slot{
 		Sequence:      seq,
+		DefaultExpr:   defExpr,
 		When:          when,
 		RequiredWhen:  reqWhen,
 		Options:       options,

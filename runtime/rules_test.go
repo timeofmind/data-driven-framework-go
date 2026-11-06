@@ -55,7 +55,7 @@ classes:
       - {name: n, type: integer, required: true, min: 1, sequence: {within: bed_id}}
       - {name: seeds, type: integer}
       - {name: plants, type: integer}
-      - {name: spacing, type: enum, enum: Spacing}
+      - {name: spacing, type: enum, enum: Spacing, default_expr: "if(bed.setting == 'indoor', 'grid', 'rows')"}
       - {name: row_cm, type: integer, when: "spacing == 'rows'", required_when: "spacing == 'rows'"}
       - {name: grid_cm, type: integer, when: "spacing == 'grid'", required_when: "spacing == 'grid'"}
       - name: light
@@ -133,11 +133,11 @@ func TestRules(t *testing.T) {
 			if p.Int("n") != 1 {
 				t.Errorf("first planting should be numbered 1, got %v", p.Values["n"])
 			}
-			p2 := plants.New(map[string]any{"bed_id": bed.ID(), "seeds": int64(3)})
+			p2 := plants.New(map[string]any{"bed_id": bed.ID(), "seeds": int64(3), "grid_cm": int64(10)})
 			if err := plants.Save(ctx, p2); err != nil || p2.Int("n") != 2 {
 				t.Fatalf("second planting: %v n=%v", err, p2.Values["n"])
 			}
-			p3 := plants.New(map[string]any{"bed_id": bed.ID(), "seeds": int64(3), "n": int64(1)})
+			p3 := plants.New(map[string]any{"bed_id": bed.ID(), "seeds": int64(3), "n": int64(1), "grid_cm": int64(10)})
 			if err := plants.Save(ctx, p3); err != nil || p3.Int("n") != 3 {
 				t.Errorf("a new row always takes the next number: %v n=%v", err, p3.Values["n"])
 			}
@@ -163,7 +163,7 @@ func TestRules(t *testing.T) {
 			if err := plants.Save(ctx, p); err != nil || p.Int("n") != 3 {
 				t.Errorf("moved: next there: %v n=%v", err, p.Values["n"])
 			}
-			p4 := plants.New(map[string]any{"bed_id": bed2.ID(), "seeds": int64(1)})
+			p4 := plants.New(map[string]any{"bed_id": bed2.ID(), "seeds": int64(1), "grid_cm": int64(10)})
 			if err := plants.Save(ctx, p4); err != nil || p4.Int("n") != 4 {
 				t.Errorf("next after 1,2,3: %v n=%v", err, p4.Values["n"])
 			}
@@ -183,7 +183,7 @@ func TestRulesValidation(t *testing.T) {
 	bad := strings.NewReplacer(
 		`values: [potting_mix, hydro]}`, `values: [potting_mix, gravel]}`,
 		`match: {setting: setting}`, `match: {colour: setting}`,
-		`when: "spacing == 'rows'", required`, `when: "bed.setting == 'rows'", required`,
+		`when: "spacing == 'rows'", required`, `when: "bed.colour == 'rows'", required`,
 		`bed_id.setting ==`, `bed_id.nope ==`,
 	).Replace(rulesSchema)
 	_, err := schema.Load(schema.String(bad))
@@ -191,7 +191,7 @@ func TestRulesValidation(t *testing.T) {
 		t.Fatal("expected validation errors")
 	}
 	for _, want := range []string{`"gravel" is not a value of Soil`, `Family has no slot "colour"`,
-		`unknown prefix "bed"`, `Bed has no slot "nope"`} {
+		`Bed has no slot "colour"`, `Bed has no slot "nope"`} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("missing %q in:\n%v", want, err)
 		}
@@ -223,5 +223,66 @@ func TestSequenceConstraint(t *testing.T) {
 	bad := strings.Replace(rulesSchema, "sequence: {within: bed_id}", "sequence: {within: seeds}", 1)
 	if _, err := schema.Load(schema.String(bad)); err == nil || !strings.Contains(err.Error(), `within "seeds" is not a belongs_to FK`) {
 		t.Errorf("sequence within a non-FK: %v", err)
+	}
+}
+
+func TestDefaultExpr(t *testing.T) {
+	m := mustLoad(t, rulesSchema)
+	for name, reg := range backends(t, m) {
+		t.Run(name, func(t *testing.T) {
+			beds, plants := reg.MustClass("Bed"), reg.MustClass("Planting")
+			in, out := beds.New(map[string]any{"name": "In", "setting": "indoor"}), beds.New(map[string]any{"name": "Out", "setting": "outdoor"})
+			beds.Save(ctx, in)
+			beds.Save(ctx, out)
+			p := plants.New(map[string]any{"bed_id": in.ID()})
+			reg.ApplyDefaults(ctx, p)
+			if p.Values["spacing"] != "grid" {
+				t.Errorf("indoor default: %v", p.Values["spacing"])
+			}
+			q := plants.New(map[string]any{"bed_id": out.ID(), "seeds": int64(1), "row_cm": int64(30)})
+			if err := plants.Save(ctx, q); err != nil || q.Values["spacing"] != "rows" {
+				t.Errorf("save applies the default: %v %v", err, q.Values["spacing"])
+			}
+			r := plants.New(map[string]any{"bed_id": out.ID(), "seeds": int64(1), "spacing": "grid", "grid_cm": int64(20)})
+			if err := plants.Save(ctx, r); err != nil || r.Values["spacing"] != "grid" {
+				t.Errorf("a chosen value wins: %v %v", err, r.Values["spacing"])
+			}
+			q.Values["spacing"] = nil
+			q.Values["row_cm"] = nil
+			if err := plants.Save(ctx, q); err != nil || q.Values["spacing"] != nil {
+				t.Errorf("defaults apply to new records only: %v %v", err, q.Values["spacing"])
+			}
+		})
+	}
+	if _, err := schema.Load(schema.String(strings.Replace(rulesSchema, "default_expr: \"if(bed.setting", "default_expr: \"if(bed.colour", 1))); err == nil {
+		t.Error("default_expr should be checked")
+	}
+}
+
+// TestWhenThroughLinks: a when rule may read the parent (light applies only
+// to indoor beds); Save loads the link, and nothing is cleared on a guess
+// when links were not loaded.
+func TestWhenThroughLinks(t *testing.T) {
+	m := mustLoad(t, strings.Replace(rulesSchema, "      - name: light\n", "      - name: light\n        when: \"bed.setting == 'indoor'\"\n", 1))
+	reg := backends(t, m)["sqlite"]
+	beds, plants := reg.MustClass("Bed"), reg.MustClass("Planting")
+	in, out := beds.New(map[string]any{"name": "In", "setting": "indoor"}), beds.New(map[string]any{"name": "Out", "setting": "outdoor"})
+	beds.Save(ctx, in)
+	beds.Save(ctx, out)
+	light := m.Class("Planting").Slot("light")
+	p := plants.New(map[string]any{"bed_id": out.ID(), "seeds": int64(1), "light": "sun", "row_cm": int64(30)})
+	if !runtime.SlotApplies(p, light) {
+		t.Error("links not loaded: the rule must not hide the field on a guess")
+	}
+	if err := plants.Save(ctx, p); err != nil || p.Values["light"] != nil {
+		t.Errorf("outdoor bed: light should be cleared: %v %v", err, p.Values["light"])
+	}
+	q := plants.New(map[string]any{"bed_id": in.ID(), "seeds": int64(1), "light": "lamp", "grid_cm": int64(20)})
+	if err := plants.Save(ctx, q); err != nil || q.Values["light"] != "lamp" {
+		t.Errorf("indoor bed keeps light: %v %v", err, q.Values["light"])
+	}
+	reg.LoadLinks(ctx, p)
+	if runtime.SlotApplies(p, light) {
+		t.Error("loaded links: light does not apply outdoors")
 	}
 }

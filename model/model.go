@@ -242,6 +242,10 @@ type Slot struct {
 	// the number after its parent's highest, as does a row moved to another
 	// parent — and unique per parent. Clients cannot set it.
 	Sequence string
+	// DefaultExpr: the value a new record starts with, computed from its other
+	// values and its links (e.g. weight for a resistance workout's reps,
+	// distance otherwise). Applied where a static default would be.
+	DefaultExpr *expr.Expr
 
 	EnumObj   *Enum  // set by the resolver
 	DefinedIn string // class the slot was declared in

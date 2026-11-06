@@ -353,6 +353,8 @@ func (h *Handle) Save(ctx context.Context, rec *Record) error {
 	if rec.Class != h.Class {
 		return fmt.Errorf("save: record is a %s, handle is %s", rec.Class.Name, h.Class.Name)
 	}
+	h.reg.ApplyDefaults(ctx, rec)
+	h.reg.LoadLinks(ctx, rec)
 	clearInapplicable(rec)
 	h.reg.fillSequences(ctx, rec)
 	errs := rec.Validate()
