@@ -589,21 +589,84 @@ func (h *Handle) InsertAt(ctx context.Context, rec *Record, s *model.Slot, pos i
 	return nil
 }
 
-// shiftSequence adds by to every number from from up within one parent. It
-// goes through negative numbers so the parent's unique numbering never
-// clashes mid-update, whatever order the database updates rows in.
-func (h *Handle) shiftSequence(ctx context.Context, s *model.Slot, parent, from, by int64) error {
-	q := h.reg.Dialect.Quote
-	table := q(h.Class.EffectiveTable())
-	if owner := h.reg.Model.Class(s.DefinedIn); owner != nil {
-		table = q(owner.EffectiveTable())
+// MoveTo moves a saved record to position pos of its sequence slot s within
+// its parent: the rows between its old and new places close up or make room
+// (moving set 4 to 2 makes 2 and 3 into 3 and 4). pos runs from 1 to the
+// highest number in use; everything happens in one transaction.
+func (h *Handle) MoveTo(ctx context.Context, rec *Record, s *model.Slot, pos int64) error {
+	if !rec.Persisted() || s.Sequence == "" {
+		return fmt.Errorf("move: needs a saved record and a sequence slot")
 	}
-	col, fk := q(s.Name), q(s.Sequence)
-	return h.reg.Tx(ctx, func(tx *sql.Tx) error {
-		if _, err := tx.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET %s = -(%s + ?) WHERE %s = ? AND %s >= ?", table, col, col, fk, col), by, parent, from); err != nil {
+	stored, err := h.Load(ctx, rec.ID())
+	if err != nil {
+		return err
+	}
+	parent, cur := stored.Int(s.Sequence), stored.Int(s.Name)
+	last := SequenceNext(h.reg.sequenceTakenFor(ctx, stored, s)) - 1
+	if cur > last {
+		last = cur
+	}
+	if pos < 1 || pos > last {
+		return FieldErrors{s.Name: fmt.Sprintf("must be from 1 to %d", last)}
+	}
+	if pos == cur {
+		return nil
+	}
+	table, col, fk, id := h.sequenceNames(s)
+	err = h.reg.Tx(ctx, func(tx *sql.Tx) error {
+		// Park the row at 0 (never a position) while the others shift.
+		if _, err := tx.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET %s = 0 WHERE %s = ?", table, col, id), rec.ID()); err != nil {
 			return err
 		}
-		_, err := tx.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET %s = -%s WHERE %s = ? AND %s < 0", table, col, col, fk, col), parent)
+		var err error
+		if pos < cur {
+			err = shiftIn(ctx, tx, table, col, fk, parent, pos, cur-1, 1)
+		} else {
+			err = shiftIn(ctx, tx, table, col, fk, parent, cur+1, pos, -1)
+		}
+		if err != nil {
+			return err
+		}
+		_, err = tx.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET %s = ? WHERE %s = ?", table, col, id), pos, rec.ID())
 		return err
 	})
+	if err != nil {
+		return err
+	}
+	rec.Values[s.Name] = pos
+	return nil
+}
+
+// shiftSequence adds by to every number from from up within one parent.
+func (h *Handle) shiftSequence(ctx context.Context, s *model.Slot, parent, from, by int64) error {
+	table, col, fk, _ := h.sequenceNames(s)
+	return h.reg.Tx(ctx, func(tx *sql.Tx) error {
+		return shiftIn(ctx, tx, table, col, fk, parent, from, 0, by)
+	})
+}
+
+// sequenceNames are the quoted table, column, parent FK and id column a
+// sequence slot lives in (its defining class's table).
+func (h *Handle) sequenceNames(s *model.Slot) (table, col, fk, id string) {
+	q, c := h.reg.Dialect.Quote, h.Class
+	if owner := h.reg.Model.Class(s.DefinedIn); owner != nil {
+		c = owner
+	}
+	return q(c.EffectiveTable()), q(s.Name), q(s.Sequence), q(c.PKSlot().Name)
+}
+
+// shiftIn adds by to the numbers from..to (to 0: no upper end) within one
+// parent. It goes through negative numbers so the parent's unique numbering
+// never clashes mid-update, whatever order the database updates rows in.
+func shiftIn(ctx context.Context, tx *sql.Tx, table, col, fk string, parent, from, to, by int64) error {
+	where, args := fmt.Sprintf("%s = ? AND %s >= ?", fk, col), []any{by, parent, from}
+	if to > 0 {
+		where += fmt.Sprintf(" AND %s <= ?", col)
+		args = append(args, to)
+	}
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET %s = -(%s + ?) WHERE %s", table, col, col, where), args...); err != nil {
+		return err
+	}
+	_, err := tx.ExecContext(ctx, fmt.Sprintf("UPDATE %s SET %s = -%s WHERE %s = ? AND %s < 0", table, col, col, fk, col), parent)
+	return err
 }

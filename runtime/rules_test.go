@@ -371,6 +371,21 @@ func TestInsertAt(t *testing.T) {
 			if order() != before {
 				t.Errorf("a failed insert must put the numbers back: %s, was %s", order(), before)
 			}
+			// 1shade 2sun 3sun 4shade 5sun 6(none): move the 6th to the front,
+			// then the new 1st to 4th.
+			moved := func(r *runtime.Record, pos int64, want string) {
+				t.Helper()
+				if err := plants.MoveTo(ctx, r, n, pos); err != nil || order() != want || r.Int("n") != pos {
+					t.Errorf("move to %d: %v %s, want %s", pos, err, order(), want)
+				}
+			}
+			moved(end, 1, "1 2shade 3sun 4sun 5shade 6sun")
+			moved(end, 4, "1shade 2sun 3sun 4 5shade 6sun")
+			moved(end, 4, "1shade 2sun 3sun 4 5shade 6sun")
+			moved(front, 6, "1sun 2sun 3 4shade 5sun 6shade")
+			if fe := fieldErrs(t, plants.MoveTo(ctx, front, n, 7)); fe["n"] != "must be from 1 to 6" {
+				t.Errorf("move out of range: %v", fe)
+			}
 		})
 	}
 }
